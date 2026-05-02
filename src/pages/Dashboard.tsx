@@ -8,7 +8,7 @@ import { StageBadge } from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
 import { Contact, PIPELINE_STAGES, PipelineStage, Activity } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
-import { seedContactsIfEmpty } from "@/lib/seed";
+import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -28,11 +28,11 @@ export default function Dashboard() {
   }, [user]);
   const load = async () => {
     setLoading(true);
-    const [{ data: cData }, { data: aData }] = await Promise.all([
-      supabase.from("contacts").select("*").order("created_at", { ascending: false }),
+    const [cData, { data: aData }] = await Promise.all([
+      fetchAllContacts<Contact>("created_at"),
       supabase.from("activities").select("*").order("created_at", { ascending: false }).limit(8),
     ]);
-    setContacts((cData ?? []) as unknown as Contact[]);
+    setContacts(cData);
     setActivities((aData ?? []) as unknown as Activity[]);
     setLoading(false);
   };

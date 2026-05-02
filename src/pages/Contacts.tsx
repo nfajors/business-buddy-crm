@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { seedContactsIfEmpty } from "@/lib/seed";
+import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
 import { useAuth } from "@/hooks/useAuth";
 import { NewContactDialog } from "@/components/NewContactDialog";
 
@@ -25,8 +25,8 @@ export default function Contacts() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from("contacts").select("*").order("created_at", { ascending: false });
-    setContacts((data ?? []) as unknown as Contact[]);
+    const all = await fetchAllContacts<Contact>("created_at");
+    setContacts(all);
     setLoading(false);
   };
 
