@@ -11,8 +11,14 @@ export async function seedContactsIfEmpty(): Promise<number> {
     const seed: Array<Record<string, unknown>> = await res.json();
     const { data: { user } } = await supabase.auth.getUser();
     const rows = seed.map((c) => ({ ...c, created_by: user?.id ?? null, owner_id: user?.id ?? null }));
-    const { error } = await supabase.from("contacts").insert(rows);
-    if (error) { console.error("Seed failed:", error); return 0; }
-    return rows.length;
+    const BATCH = 250;
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const chunk = rows.slice(i, i + BATCH);
+      const { error } = await supabase.from("contacts").insert(chunk);
+      if (error) { console.error("Seed batch failed:", error); break; }
+      inserted += chunk.length;
+    }
+    return inserted;
   } catch (e) { console.error(e); return 0; }
 }
