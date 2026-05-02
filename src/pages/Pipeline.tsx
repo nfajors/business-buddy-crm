@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { seedContactsIfEmpty } from "@/lib/seed";
+import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -16,8 +16,8 @@ export default function Pipeline() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from("contacts").select("*").order("updated_at", { ascending: false });
-    setContacts((data ?? []) as unknown as Contact[]);
+    const data = await fetchAllContacts<Contact>("updated_at");
+    setContacts(data);
     setLoading(false);
   };
   useEffect(() => {

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { seedContactsIfEmpty } from "@/lib/seed";
+import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
 import { useAuth } from "@/hooks/useAuth";
 import { NewContactDialog } from "@/components/NewContactDialog";
 
@@ -25,22 +25,7 @@ export default function Contacts() {
 
   const load = async () => {
     setLoading(true);
-    const PAGE = 1000;
-    let from = 0;
-    const all: Contact[] = [];
-    // Paginate past Supabase's default 1000-row cap
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error || !data) break;
-      all.push(...(data as unknown as Contact[]));
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
+    const all = await fetchAllContacts<Contact>("created_at");
     setContacts(all);
     setLoading(false);
   };
