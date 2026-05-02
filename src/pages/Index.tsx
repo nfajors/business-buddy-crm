@@ -5,10 +5,10 @@ import { Brand, BrandText } from "@/components/Brand";
 import { useAuth } from "@/hooks/useAuth";
 
 const features = [
-  { icon: Users, title: "Unified Contacts", body: "100+ career-services leads loaded out of the box, ready to manage." },
-  { icon: Kanban, title: "Visual Pipeline", body: "Drag contacts across outreach stages, from New to Closed." },
-  { icon: BarChart3, title: "Live Dashboard", body: "Track conversions, response rates, and team activity in real time." },
-  { icon: ShieldCheck, title: "Multi-User & Secure", body: "Invite your whole team. Role-based access, encrypted at rest." },
+  { icon: Users, title: "3,300+ B2B Leads", body: "Career-services and HE decision-makers preloaded from our prospecting list." },
+  { icon: Kanban, title: "Visual Pipeline", body: "Drag accounts across outreach stages, from New to Closed-Won." },
+  { icon: BarChart3, title: "Team Dashboard", body: "Track conversions, response rates, and rep activity in real time." },
+  { icon: ShieldCheck, title: "Staff-Only Access", body: "Internal Winning.Careers tool. Role-based access, encrypted at rest." },
 ];
 
 export default function Index() {
@@ -31,14 +31,14 @@ export default function Index() {
 
       <section className="container mx-auto px-6 pt-20 pb-24 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary text-xs font-bold text-gold-dark mb-6">
-          <Sparkles className="h-3 w-3" /> PURPOSE · PASSION · PRECISION
+          <Sparkles className="h-3 w-3" /> INTERNAL · WINNING.CAREERS STAFF
         </div>
         <h1 className="text-5xl md:text-6xl font-black tracking-tight max-w-3xl mx-auto leading-tight">
-          The CRM built for <span className="text-gold">career services</span> teams.
+          The B2B sales CRM for the <span className="text-gold">Winning.Careers</span> network.
         </h1>
         <p className="text-lg text-muted-foreground mt-6 max-w-2xl mx-auto">
-          Bridge the gap between ambitious individuals and specialized knowledge. Manage your outreach,
-          pipeline, and relationships in one focused workspace.
+          Manage outreach to universities, career-services leaders, and B2B partners for the
+          white-label Winning.Careers platform — all in one shared workspace.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
           <Button asChild size="lg" className="shadow-gold">
