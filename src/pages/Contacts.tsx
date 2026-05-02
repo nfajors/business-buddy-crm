@@ -25,8 +25,23 @@ export default function Contacts() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from("contacts").select("*").order("created_at", { ascending: false });
-    setContacts((data ?? []) as unknown as Contact[]);
+    const PAGE = 1000;
+    let from = 0;
+    const all: Contact[] = [];
+    // Paginate past Supabase's default 1000-row cap
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data) break;
+      all.push(...(data as unknown as Contact[]));
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    setContacts(all);
     setLoading(false);
   };
 
