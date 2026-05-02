@@ -14,16 +14,228 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activities: {
+        Row: {
+          actor_id: string | null
+          contact_id: string
+          created_at: string
+          description: string
+          id: string
+          metadata: Json
+          type: Database["public"]["Enums"]["activity_type"]
+        }
+        Insert: {
+          actor_id?: string | null
+          contact_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          metadata?: Json
+          type: Database["public"]["Enums"]["activity_type"]
+        }
+        Update: {
+          actor_id?: string | null
+          contact_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          metadata?: Json
+          type?: Database["public"]["Enums"]["activity_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activities_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contacts: {
+        Row: {
+          annual_revenue: number
+          city: string
+          company: string
+          company_city: string
+          country: string
+          created_at: string
+          created_by: string | null
+          email: string
+          email_status: string
+          employees: number
+          first_name: string
+          id: string
+          industry: string
+          last_activity_at: string | null
+          last_name: string
+          linkedin: string
+          mobile_phone: string
+          owner_id: string | null
+          pipeline_stage: Database["public"]["Enums"]["pipeline_stage"]
+          state: string
+          tags: string[]
+          title: string
+          updated_at: string
+          website: string
+          work_phone: string
+        }
+        Insert: {
+          annual_revenue?: number
+          city?: string
+          company?: string
+          company_city?: string
+          country?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          email_status?: string
+          employees?: number
+          first_name?: string
+          id?: string
+          industry?: string
+          last_activity_at?: string | null
+          last_name?: string
+          linkedin?: string
+          mobile_phone?: string
+          owner_id?: string | null
+          pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
+          state?: string
+          tags?: string[]
+          title?: string
+          updated_at?: string
+          website?: string
+          work_phone?: string
+        }
+        Update: {
+          annual_revenue?: number
+          city?: string
+          company?: string
+          company_city?: string
+          country?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          email_status?: string
+          employees?: number
+          first_name?: string
+          id?: string
+          industry?: string
+          last_activity_at?: string | null
+          last_name?: string
+          linkedin?: string
+          mobile_phone?: string
+          owner_id?: string | null
+          pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
+          state?: string
+          tags?: string[]
+          title?: string
+          updated_at?: string
+          website?: string
+          work_phone?: string
+        }
+        Relationships: []
+      }
+      notes: {
+        Row: {
+          author_id: string | null
+          contact_id: string
+          content: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          author_id?: string | null
+          contact_id: string
+          content: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          author_id?: string | null
+          contact_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notes_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      activity_type:
+        | "stage_change"
+        | "note"
+        | "call"
+        | "email"
+        | "meeting"
+        | "created"
+      app_role: "admin" | "user"
+      pipeline_stage: "new" | "contacted" | "responded" | "meeting" | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +362,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      activity_type: [
+        "stage_change",
+        "note",
+        "call",
+        "email",
+        "meeting",
+        "created",
+      ],
+      app_role: ["admin", "user"],
+      pipeline_stage: ["new", "contacted", "responded", "meeting", "closed"],
+    },
   },
 } as const
