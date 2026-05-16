@@ -11,10 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { NewContactDialog } from "@/components/NewContactDialog";
 import { useContacts, useIndustries } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 
 const PAGE_SIZE = 50;
 
 export default function Contacts() {
+  const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -141,7 +143,7 @@ export default function Contacts() {
           )}
         </div>
       </div>
-      <NewContactDialog open={openNew} onOpenChange={setOpenNew} onCreated={() => setPage(0)} />
+      <NewContactDialog open={openNew} onOpenChange={setOpenNew} onCreated={() => { setPage(0); qc.invalidateQueries({ queryKey: ["contacts"] }); qc.invalidateQueries({ queryKey: ["dashboard-stats"] }); qc.invalidateQueries({ queryKey: ["pipeline"] }); }} />
     </AppLayout>
   );
 }
