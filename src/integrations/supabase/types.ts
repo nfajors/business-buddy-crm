@@ -224,6 +224,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_dashboard_stats: {
+        Args: never
+        Returns: {
+          closed_count: number
+          contacted_count: number
+          meeting_count: number
+          new_count: number
+          responded_count: number
+          total: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
