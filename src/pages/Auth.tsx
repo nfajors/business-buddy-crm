@@ -16,7 +16,7 @@ const nameSchema = z.string().trim().min(1, { message: "Name is required" }).max
 export default function Auth() {
   const { user, loading, signIn, signUp } = useAuth();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<"signin" | "signup">(params.get("mode") === "signup" ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">(params.get("mode") === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -26,7 +26,9 @@ export default function Auth() {
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
 
   useEffect(() => {
-    setMode(params.get("mode") === "signup" ? "signup" : "signin");
+    const m = params.get("mode");
+    if (m === "signup" || m === "forgot") setMode(m);
+    else setMode("signin");
   }, [params]);
 
   if (!loading && user) return <Navigate to={from} replace />;
@@ -37,6 +39,18 @@ export default function Auth() {
     try {
       const emailParsed = emailSchema.safeParse(email);
       if (!emailParsed.success) { toast.error(emailParsed.error.issues[0].message); return; }
+
+      if (mode === "forgot") {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { error } = await supabase.auth.resetPasswordForEmail(emailParsed.data, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) { toast.error(error.message); return; }
+        toast.success("If that email exists, a reset link has been sent.");
+        setMode("signin");
+        return;
+      }
+
       const passParsed = passwordSchema.safeParse(password);
       if (!passParsed.success) { toast.error(passParsed.error.issues[0].message); return; }
 
@@ -82,12 +96,14 @@ export default function Auth() {
             <Brand className="h-9" />
           </div>
           <h1 className="text-2xl font-bold">
-            {mode === "signin" ? "Sign in" : "Create staff account"}
+            {mode === "signin" ? "Sign in" : mode === "signup" ? "Create staff account" : "Reset password"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signin"
               ? "Welcome back. Pick up where you left off."
-              : "Internal use only — Winning.Careers staff."}
+              : mode === "signup"
+              ? "Internal use only — Winning.Careers staff."
+              : "Enter your email and we'll send you a reset link."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -115,34 +131,58 @@ export default function Auth() {
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                required
-              />
-            </div>
+            {mode !== "forgot" && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  {mode === "signin" && (
+                    <button
+                      type="button"
+                      onClick={() => setMode("forgot")}
+                      className="text-xs text-gold-dark font-semibold hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  required
+                />
+              </div>
+            )}
 
             <Button type="submit" className="w-full shadow-gold" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
             </Button>
           </form>
 
           <p className="text-sm text-muted-foreground text-center mt-6">
-            {mode === "signin" ? "Don't have an account? " : "Already have an account? "}
-            <button
-              type="button"
-              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-              className="text-gold-dark font-semibold hover:underline"
-            >
-              {mode === "signin" ? "Sign up" : "Sign in"}
-            </button>
+            {mode === "forgot" ? (
+              <>
+                Remembered it?{" "}
+                <button type="button" onClick={() => setMode("signin")} className="text-gold-dark font-semibold hover:underline">
+                  Back to sign in
+                </button>
+              </>
+            ) : (
+              <>
+                {mode === "signin" ? "Don't have an account? " : "Already have an account? "}
+                <button
+                  type="button"
+                  onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                  className="text-gold-dark font-semibold hover:underline"
+                >
+                  {mode === "signin" ? "Sign up" : "Sign in"}
+                </button>
+              </>
+            )}
           </p>
         </div>
       </div>
