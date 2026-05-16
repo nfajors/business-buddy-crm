@@ -106,7 +106,8 @@ export function useContacts(args: ContactsQueryArgs) {
         // token searches let websearch_to_tsquery handle quoting + boolean.
         const tokens = s.split(/\s+/).filter(Boolean);
         if (tokens.length === 1 && !/[:&|!()"']/.test(tokens[0])) {
-          q = q.textSearch("search_tsv", `${tokens[0]}:*`, { type: "tsquery" });
+          // Prefix match on a single token via raw tsquery operator.
+          q = q.filter("search_tsv", "fts", `${tokens[0]}:*`);
         } else {
           q = q.textSearch("search_tsv", s, { type: "websearch" });
         }
