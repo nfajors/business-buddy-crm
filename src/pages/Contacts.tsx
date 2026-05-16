@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, Search, Users, Plus } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StageBadge } from "@/components/StageBadge";
@@ -9,66 +8,57 @@ import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { fetchAllContacts } from "@/lib/seed";
-import { useAuth } from "@/hooks/useAuth";
+import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { NewContactDialog } from "@/components/NewContactDialog";
+import { useContacts, useIndustries } from "@/lib/queries";
+
+const PAGE_SIZE = 50;
 
 export default function Contacts() {
-  const { user } = useAuth();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
+  const [page, setPage] = useState(0);
   const [openNew, setOpenNew] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    const all = await fetchAllContacts<Contact>("created_at");
-    setContacts(all);
-    setLoading(false);
-  };
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
-    if (!user) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    setPage(0);
+  }, [debouncedSearch, stageFilter, industryFilter]);
 
-  const industries = useMemo(
-    () => Array.from(new Set(contacts.map((c) => c.industry).filter(Boolean))).sort(),
-    [contacts]
-  );
+  const { data, isLoading, isFetching } = useContacts({
+    search: debouncedSearch,
+    stage: stageFilter as PipelineStage | "all",
+    industry: industryFilter,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+  const { data: industries = [] } = useIndustries();
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return contacts.filter((c) => {
-      if (stageFilter !== "all" && c.pipeline_stage !== stageFilter) return false;
-      if (industryFilter !== "all" && c.industry !== industryFilter) return false;
-      if (!q) return true;
-      return (
-        `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
-        c.company.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.title.toLowerCase().includes(q)
-      );
-    });
-  }, [contacts, search, stageFilter, industryFilter]);
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(total, page * PAGE_SIZE + rows.length);
 
   return (
     <AppLayout>
       <div className="px-6 lg:px-10 py-8 max-w-7xl mx-auto">
         <PageHeader
           title="Contacts"
-          description={`${filtered.length} of ${contacts.length} contacts`}
+          description={total === 0 ? "No contacts yet" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
           action={<Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New contact</Button>}
         />
         <div className="bg-card border border-border rounded-xl shadow-elegant overflow-hidden">
           <div className="flex flex-col md:flex-row gap-3 p-4 border-b border-border">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search by name, company, email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Search name, company, email, phone, city…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="md:w-44"><SelectValue placeholder="Stage" /></SelectTrigger>
@@ -85,13 +75,18 @@ export default function Contacts() {
               </SelectContent>
             </Select>
           </div>
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
-          ) : filtered.length === 0 ? (
+          ) : rows.length === 0 ? (
             <EmptyState icon={Users} title="No contacts found" description="Try adjusting your search or filters, or add a new contact."
               action={<Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New contact</Button>} />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto relative">
+              {isFetching && (
+                <div className="absolute right-3 top-3 text-xs text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Updating
+                </div>
+              )}
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
@@ -103,7 +98,7 @@ export default function Contacts() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filtered.map((c) => (
+                  {rows.map((c) => (
                     <tr key={c.id} className="hover:bg-secondary/40 transition-smooth">
                       <td className="px-4 py-3">
                         <Link to={`/contacts/${c.id}`} className="font-semibold text-foreground hover:text-gold-dark">
@@ -119,11 +114,24 @@ export default function Contacts() {
                   ))}
                 </tbody>
               </table>
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border text-sm">
+                <span className="text-muted-foreground">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
-      <NewContactDialog open={openNew} onOpenChange={setOpenNew} onCreated={load} />
+      <NewContactDialog open={openNew} onOpenChange={setOpenNew} onCreated={() => setPage(0)} />
     </AppLayout>
   );
 }
