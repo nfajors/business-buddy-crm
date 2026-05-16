@@ -23,7 +23,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </button>
       <aside className={cn("fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-ink text-sidebar-foreground flex flex-col transition-transform", mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0")}>
         <div className="px-6 py-6 border-b border-sidebar-border">
-          <Link to="/dashboard" onClick={() => setMobileOpen(false)}><Brand className="h-9" /></Link>
+          <Link to="/dashboard" onClick={() => setMobileOpen(false)}><Brand className="h-10 w-auto max-w-[180px] object-contain invert brightness-0" /></Link>
         </div>
         <nav className="flex-1 px-3 py-6 space-y-1">
           {navItems.map((item) => (
