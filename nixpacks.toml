@@ -1,0 +1,14 @@
+# Pins Node so Railway builds match local dev. Vite 5 requires Node 18+.
+# `serve` (added in #11) handles SPA fallback for client-side routing.
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "serve -s dist -l ${PORT:-4173}"
