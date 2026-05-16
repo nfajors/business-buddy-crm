@@ -7,6 +7,7 @@ import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
 import { format } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
+import { MfaSection } from "@/components/MfaSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,6 +95,7 @@ export default function Settings() {
                 </Button>
               </div>
             </section>
+            <MfaSection />
             <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
               <h3 className="font-bold mb-1">Account</h3>
               <Button variant="outline" onClick={handleSignOut} className="mt-2"><LogOut className="h-4 w-4 mr-2" /> Sign out</Button>
