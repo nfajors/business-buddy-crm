@@ -12,6 +12,7 @@ import { formatDistanceToNow } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { EditContactDialog } from "@/components/EditContactDialog";
 import { useContact, useContactActivities, useContactNotes } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAddNote, useDeleteContact, useUpdateStage } from "@/lib/mutations";
 
 export default function ContactDetail() {
@@ -20,6 +21,7 @@ export default function ContactDetail() {
   const { user, isAdmin } = useAuth();
   const [noteText, setNoteText] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  const qc = useQueryClient();
 
   const { data: contact, isLoading } = useContact(id);
   const { data: notes = [] } = useContactNotes(id);
@@ -120,7 +122,10 @@ export default function ContactDetail() {
             </div>
           )}
         </div>
-        <EditContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} onSaved={() => { /* react-query invalidates automatically */ }} />
+        <EditContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["contact", id] });
+          qc.invalidateQueries({ queryKey: ["contacts"] });
+        }} />
         <div className="grid lg:grid-cols-2 gap-6 mt-6">
           <div className="bg-card border border-border rounded-xl p-6 shadow-elegant">
             <h3 className="font-bold mb-4">Notes</h3>
