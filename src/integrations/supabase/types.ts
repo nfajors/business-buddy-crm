@@ -198,6 +198,62 @@ export type Database = {
         }
         Relationships: []
       }
+      tasks: {
+        Row: {
+          assignee_id: string | null
+          completed_at: string | null
+          completed_by: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_at: string | null
+          id: string
+          priority: Database["public"]["Enums"]["task_priority"]
+          status: Database["public"]["Enums"]["task_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          priority?: Database["public"]["Enums"]["task_priority"]
+          status?: Database["public"]["Enums"]["task_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          priority?: Database["public"]["Enums"]["task_priority"]
+          status?: Database["public"]["Enums"]["task_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -251,6 +307,8 @@ export type Database = {
         | "email"
         | "meeting"
         | "created"
+        | "task_created"
+        | "task_completed"
       app_role: "admin" | "user"
       email_status:
         | "unknown"
@@ -262,6 +320,8 @@ export type Database = {
         | "role"
         | "unverified"
       pipeline_stage: "new" | "contacted" | "responded" | "meeting" | "closed"
+      task_priority: "low" | "normal" | "high"
+      task_status: "open" | "done" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -396,6 +456,8 @@ export const Constants = {
         "email",
         "meeting",
         "created",
+        "task_created",
+        "task_completed",
       ],
       app_role: ["admin", "user"],
       email_status: [
@@ -409,6 +471,8 @@ export const Constants = {
         "unverified",
       ],
       pipeline_stage: ["new", "contacted", "responded", "meeting", "closed"],
+      task_priority: ["low", "normal", "high"],
+      task_status: ["open", "done", "cancelled"],
     },
   },
 } as const

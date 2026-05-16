@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Kanban, Settings, LogOut, Menu, X, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, Kanban, CheckSquare, Settings, LogOut, Menu, X, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Brand } from "@/components/Brand";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/contacts", label: "Contacts", icon: Users },
   { to: "/pipeline", label: "Pipeline", icon: Kanban },
+  { to: "/tasks", label: "Tasks", icon: CheckSquare },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 export function AppLayout({ children }: { children: ReactNode }) {

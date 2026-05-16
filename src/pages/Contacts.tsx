@@ -1,17 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight, Download, Upload, Tag, Trash2, X } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StageBadge } from "@/components/StageBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { NewContactDialog } from "@/components/NewContactDialog";
+import { ImportContactsDialog } from "@/components/ImportContactsDialog";
 import { useContacts, useIndustries } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
+import { useBulkAddTag, useBulkDeleteContacts, useBulkUpdateContacts } from "@/lib/mutations";
+import { contactsToCsv, downloadCsv } from "@/lib/csv";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const PAGE_SIZE = 50;
 
@@ -24,6 +34,14 @@ export default function Contacts() {
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
   const [openNew, setOpenNew] = useState(false);
+  const [openImport, setOpenImport] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tagInput, setTagInput] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const bulkUpdate = useBulkUpdateContacts();
+  const bulkDelete = useBulkDeleteContacts();
+  const bulkTag = useBulkAddTag();
 
   // Keep ?stage= in sync so links from the pipeline land filtered.
   useEffect(() => {
@@ -41,6 +59,7 @@ export default function Contacts() {
 
   useEffect(() => {
     setPage(0);
+    setSelected(new Set());
   }, [debouncedSearch, stageFilter, industryFilter]);
 
   const { data, isLoading, isFetching } = useContacts({
@@ -57,6 +76,58 @@ export default function Contacts() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE + rows.length);
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someOnPageSelected = rows.some((r) => selected.has(r.id));
+
+  const togglePage = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) rows.forEach((r) => next.add(r.id));
+      else rows.forEach((r) => next.delete(r.id));
+      return next;
+    });
+  };
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      let query = supabase.from("contacts").select("*");
+      if (selectedIds.length > 0) {
+        query = query.in("id", selectedIds);
+      } else {
+        if (stageFilter !== "all") query = query.eq("pipeline_stage", stageFilter as PipelineStage);
+        if (industryFilter !== "all") query = query.eq("industry", industryFilter);
+        const s = debouncedSearch.trim();
+        if (s) {
+          const like = `%${s.replace(/[%_]/g, "\\$&")}%`;
+          query = query.or([
+            `first_name.ilike.${like}`, `last_name.ilike.${like}`,
+            `company.ilike.${like}`, `email.ilike.${like}`, `title.ilike.${like}`,
+            `city.ilike.${like}`, `work_phone.ilike.${like}`, `mobile_phone.ilike.${like}`,
+          ].join(","));
+        }
+      }
+      const { data: all, error } = await query.order("created_at", { ascending: false }).limit(10_000);
+      if (error) throw error;
+      const csv = contactsToCsv(all ?? []);
+      const label = selectedIds.length > 0 ? `contacts-selected-${selectedIds.length}` : "contacts";
+      downloadCsv(`${label}-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    } catch (e) {
+      toast.error((e as Error).message || "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -64,8 +135,64 @@ export default function Contacts() {
         <PageHeader
           title="Contacts"
           description={total === 0 ? "No contacts yet" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
-          action={<Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New contact</Button>}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={exportCsv} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
+                Export CSV
+              </Button>
+              <Button variant="outline" onClick={() => setOpenImport(true)}>
+                <Upload className="h-4 w-4 mr-1" /> Import CSV
+              </Button>
+              <Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New contact</Button>
+            </div>
+          }
         />
+        {selectedIds.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-secondary/60 border border-border rounded-lg">
+            <span className="text-sm font-medium">{selectedIds.length} selected</span>
+            <Select onValueChange={(v) => bulkUpdate.mutate({ ids: selectedIds, patch: { pipeline_stage: v as PipelineStage } }, { onSuccess: clearSelection })}>
+              <SelectTrigger className="w-44 h-8"><SelectValue placeholder="Move to stage…" /></SelectTrigger>
+              <SelectContent>
+                {PIPELINE_STAGES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1">
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                placeholder="Add tag…"
+                className="h-8 w-32"
+              />
+              <Button size="sm" variant="outline" disabled={!tagInput.trim() || bulkTag.isPending}
+                onClick={() => bulkTag.mutate({ ids: selectedIds, tag: tagInput }, { onSuccess: () => { setTagInput(""); clearSelection(); } })}>
+                <Tag className="h-4 w-4 mr-1" /> Apply
+              </Button>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {selectedIds.length} contact{selectedIds.length === 1 ? "" : "s"}?</AlertDialogTitle>
+                  <AlertDialogDescription>This permanently removes the selected contacts, their notes and tasks. This cannot be undone.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => bulkDelete.mutate(selectedIds, { onSuccess: clearSelection })}
+                    className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button size="sm" variant="ghost" onClick={clearSelection} className="ml-auto">
+              <X className="h-4 w-4 mr-1" /> Clear
+            </Button>
+          </div>
+        )}
         <div className="bg-card border border-border rounded-xl shadow-elegant overflow-hidden">
           <div className="flex flex-col md:flex-row gap-3 p-4 border-b border-border">
             <div className="relative flex-1">
@@ -102,6 +229,13 @@ export default function Contacts() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
+                    <th className="px-3 py-3 w-10">
+                      <Checkbox
+                        checked={allOnPageSelected ? true : someOnPageSelected ? "indeterminate" : false}
+                        onCheckedChange={(v) => togglePage(!!v)}
+                        aria-label="Select page"
+                      />
+                    </th>
                     <th className="px-4 py-3 font-semibold">Name</th>
                     <th className="px-4 py-3 font-semibold hidden md:table-cell">Title</th>
                     <th className="px-4 py-3 font-semibold">Company</th>
@@ -112,6 +246,13 @@ export default function Contacts() {
                 <tbody className="divide-y divide-border">
                   {rows.map((c) => (
                     <tr key={c.id} className="hover:bg-secondary/40 transition-smooth">
+                      <td className="px-3 py-3 w-10">
+                        <Checkbox
+                          checked={selected.has(c.id)}
+                          onCheckedChange={(v) => toggleOne(c.id, !!v)}
+                          aria-label={`Select ${c.first_name} ${c.last_name ?? ""}`}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <Link to={`/contacts/${c.id}`} className="font-semibold text-foreground hover:text-gold-dark">
                           {c.first_name} {c.last_name}
@@ -144,6 +285,7 @@ export default function Contacts() {
         </div>
       </div>
       <NewContactDialog open={openNew} onOpenChange={setOpenNew} onCreated={() => { setPage(0); qc.invalidateQueries({ queryKey: ["contacts"] }); qc.invalidateQueries({ queryKey: ["dashboard-stats"] }); qc.invalidateQueries({ queryKey: ["pipeline"] }); }} />
+      <ImportContactsDialog open={openImport} onOpenChange={setOpenImport} />
     </AppLayout>
   );
 }

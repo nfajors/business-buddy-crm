@@ -8,6 +8,11 @@ export type ContactUpdate = Database["public"]["Tables"]["contacts"]["Update"];
 export type Note = Database["public"]["Tables"]["notes"]["Row"];
 export type Activity = Database["public"]["Tables"]["activities"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type Task = Database["public"]["Tables"]["tasks"]["Row"];
+export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
+export type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
+export type TaskStatus = Database["public"]["Enums"]["task_status"];
+export type TaskPriority = Database["public"]["Enums"]["task_priority"];
 
 export type PipelineStage = Database["public"]["Enums"]["pipeline_stage"];
 export type EmailStatus = Database["public"]["Enums"]["email_status"];
