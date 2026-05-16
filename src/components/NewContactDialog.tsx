@@ -14,10 +14,13 @@ const schema = z.object({
   title: z.string().trim().max(200).default(""),
   company: z.string().trim().max(200).default(""),
   email: z.string().trim().email().max(255).or(z.literal("")),
+  city: z.string().trim().max(100).default(""),
+  state: z.string().trim().max(100).default(""),
+  country: z.string().trim().max(100).default(""),
 });
 export function NewContactDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: () => void; }) {
   const { user } = useAuth();
-  const [form, setForm] = useState({ first_name: "", last_name: "", title: "", company: "", email: "" });
+  const [form, setForm] = useState({ first_name: "", last_name: "", title: "", company: "", email: "", city: "", state: "", country: "" });
   const [submitting, setSubmitting] = useState(false);
   const submit = async () => {
     const parsed = schema.safeParse(form);
@@ -27,7 +30,7 @@ export function NewContactDialog({ open, onOpenChange, onCreated }: { open: bool
     setSubmitting(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Contact created");
-    setForm({ first_name: "", last_name: "", title: "", company: "", email: "" });
+    setForm({ first_name: "", last_name: "", title: "", company: "", email: "", city: "", state: "", country: "" });
     onOpenChange(false); onCreated();
   };
   return (
@@ -40,6 +43,9 @@ export function NewContactDialog({ open, onOpenChange, onCreated }: { open: bool
           <div className="space-y-1.5 col-span-2"><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div className="space-y-1.5 col-span-2"><Label>Company</Label><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></div>
           <div className="space-y-1.5 col-span-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>City</Label><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>State / Region</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} /></div>
+          <div className="space-y-1.5 col-span-2"><Label>Country</Label><Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
