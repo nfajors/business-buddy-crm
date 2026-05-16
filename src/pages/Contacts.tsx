@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
+import { fetchAllContacts } from "@/lib/seed";
 import { useAuth } from "@/hooks/useAuth";
 import { NewContactDialog } from "@/components/NewContactDialog";
 
@@ -32,7 +32,7 @@ export default function Contacts() {
 
   useEffect(() => {
     if (!user) return;
-    (async () => { await seedContactsIfEmpty(); await load(); })();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
