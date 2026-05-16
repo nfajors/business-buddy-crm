@@ -78,7 +78,7 @@ export default function Auth() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-10 gradient-dark text-white">
-        <Brand className="h-[4.5rem]" />
+        <Brand className="h-12 w-auto max-w-[260px] object-contain" />
         <div>
           <h2 className="text-4xl font-black leading-tight">
             Winning.Careers <span className="text-gold">internal CRM.</span>
@@ -93,7 +93,7 @@ export default function Auth() {
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <div className="lg:hidden mb-6">
-            <Brand className="h-[4.5rem]" />
+            <Brand className="h-10 w-auto max-w-[220px] object-contain" />
           </div>
           <h1 className="text-2xl font-bold">
             {mode === "signin" ? "Sign in" : mode === "signup" ? "Create staff account" : "Reset password"}
