@@ -1,0 +1,140 @@
+import type { Contact, ContactInsert } from "@/lib/types";
+
+// Minimal CSV helpers (no external dep, item 7).
+
+const CONTACT_EXPORT_COLUMNS: { key: keyof Contact; label: string }[] = [
+  { key: "first_name", label: "First Name" },
+  { key: "last_name", label: "Last Name" },
+  { key: "title", label: "Title" },
+  { key: "company", label: "Company" },
+  { key: "email", label: "Email" },
+  { key: "work_phone", label: "Work Phone" },
+  { key: "mobile_phone", label: "Mobile Phone" },
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "website", label: "Website" },
+  { key: "industry", label: "Industry" },
+  { key: "city", label: "City" },
+  { key: "state", label: "State" },
+  { key: "country", label: "Country" },
+  { key: "pipeline_stage", label: "Stage" },
+];
+
+function escapeCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  let s = String(v);
+  if (Array.isArray(v)) s = (v as unknown[]).join("; ");
+  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+export function contactsToCsv(contacts: Contact[]): string {
+  const header = CONTACT_EXPORT_COLUMNS.map((c) => c.label).join(",");
+  const lines = contacts.map((c) =>
+    CONTACT_EXPORT_COLUMNS.map((col) => escapeCell((c as Record<string, unknown>)[col.key as string])).join(","),
+  );
+  return [header, ...lines].join("\n");
+}
+
+export function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// CSV parser handling quoted cells with embedded commas/newlines/double-quotes.
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let i = 0;
+  let inQuotes = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      cell += ch; i++; continue;
+    }
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ",") { row.push(cell); cell = ""; i++; continue; }
+    if (ch === "\r") { i++; continue; }
+    if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; i++; continue; }
+    cell += ch; i++;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  // Strip BOM on first cell
+  if (rows[0]?.[0]?.charCodeAt(0) === 0xfeff) rows[0][0] = rows[0][0].slice(1);
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+const HEADER_MAP: Record<string, keyof ContactInsert> = {
+  "first name": "first_name", firstname: "first_name", first_name: "first_name",
+  "last name": "last_name", lastname: "last_name", last_name: "last_name",
+  title: "title", role: "title",
+  company: "company", organization: "company", organisation: "company",
+  email: "email", "email address": "email",
+  "work phone": "work_phone", phone: "work_phone", work_phone: "work_phone",
+  "mobile phone": "mobile_phone", mobile: "mobile_phone", mobile_phone: "mobile_phone",
+  linkedin: "linkedin", "linkedin url": "linkedin",
+  website: "website", url: "website",
+  industry: "industry",
+  city: "city",
+  state: "state", region: "state",
+  country: "country",
+  stage: "pipeline_stage", pipeline_stage: "pipeline_stage", "pipeline stage": "pipeline_stage",
+};
+
+const STAGE_MAP: Record<string, string> = {
+  new: "new", contacted: "contacted", responded: "responded",
+  meeting: "meeting", "meeting scheduled": "meeting", closed: "closed",
+};
+
+export type CsvParseResult = {
+  rows: ContactInsert[];
+  skipped: { rowIndex: number; reason: string }[];
+  recognisedColumns: (keyof ContactInsert | null)[];
+};
+
+export function csvToContacts(text: string, defaults: Partial<ContactInsert> = {}): CsvParseResult {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return { rows: [], skipped: [], recognisedColumns: [] };
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const colMap = header.map((h) => HEADER_MAP[h] ?? null);
+  const out: ContactInsert[] = [];
+  const skipped: { rowIndex: number; reason: string }[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const obj: Record<string, unknown> = { ...defaults };
+    colMap.forEach((key, idx) => {
+      if (!key) return;
+      const val = (r[idx] ?? "").trim();
+      if (!val) return;
+      if (key === "pipeline_stage") {
+        const mapped = STAGE_MAP[val.toLowerCase()];
+        if (mapped) obj[key] = mapped;
+      } else {
+        obj[key] = val;
+      }
+    });
+    if (!obj.first_name && !obj.company) {
+      skipped.push({ rowIndex: i + 1, reason: "Missing first name and company" });
+      continue;
+    }
+    obj.first_name = obj.first_name ?? "";
+    obj.company = obj.company ?? "";
+    if (obj.email && typeof obj.email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(obj.email)) {
+      skipped.push({ rowIndex: i + 1, reason: `Invalid email "${obj.email}"` });
+      continue;
+    }
+    out.push(obj as ContactInsert);
+  }
+  return { rows: out, skipped, recognisedColumns: colMap };
+}
