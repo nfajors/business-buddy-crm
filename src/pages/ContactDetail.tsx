@@ -1,19 +1,22 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil, Plus } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil, Plus, Copy, Check, X, Tag } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StageBadge } from "@/components/StageBadge";
 import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { EditContactDialog } from "@/components/EditContactDialog";
 import { useContact, useContactActivities, useContactNotes, useTasks } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAddNote, useDeleteContact, useUpdateStage } from "@/lib/mutations";
+import { useAddNote, useDeleteContact, useUpdateContactTags, useUpdateStage } from "@/lib/mutations";
 import { NewTaskDialog } from "@/components/NewTaskDialog";
 import { TasksList } from "@/components/TasksList";
 
@@ -24,6 +27,7 @@ export default function ContactDetail() {
   const [noteText, setNoteText] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [tagInput, setTagInput] = useState("");
   const qc = useQueryClient();
 
   const { data: contact, isLoading } = useContact(id);
@@ -33,6 +37,7 @@ export default function ContactDetail() {
   const updateStage = useUpdateStage();
   const addNote = useAddNote(id ?? "");
   const deleteContact = useDeleteContact();
+  const updateTags = useUpdateContactTags(id ?? "");
 
   const onChangeStage = (stage: PipelineStage) => {
     if (!contact || contact.pipeline_stage === stage) return;
@@ -47,6 +52,17 @@ export default function ContactDetail() {
   const onDelete = () => {
     if (!contact) return;
     deleteContact.mutate(contact.id, { onSuccess: () => navigate("/contacts") });
+  };
+  const onAddTag = () => {
+    if (!contact) return;
+    const v = tagInput.trim();
+    if (!v) return;
+    const next = Array.from(new Set([...(contact.tags ?? []), v]));
+    updateTags.mutate(next, { onSuccess: () => setTagInput("") });
+  };
+  const onRemoveTag = (t: string) => {
+    if (!contact) return;
+    updateTags.mutate((contact.tags ?? []).filter((x) => x !== t));
   };
 
   if (isLoading) return <AppLayout><div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div></AppLayout>;
@@ -99,6 +115,41 @@ export default function ContactDetail() {
               <Field icon={MapPin} label="Location" value={[contact.city, contact.state, contact.country].filter(Boolean).join(", ")} />
             )}
           </div>
+          {canEdit && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Tag className="h-4 w-4 text-gold-dark" />
+                <span className="text-xs uppercase text-muted-foreground tracking-wide">Tags</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(contact.tags ?? []).map((t) => (
+                  <Badge key={t} variant="secondary" className="gap-1 pl-2 pr-1 py-1">
+                    {t}
+                    <button
+                      type="button"
+                      onClick={() => onRemoveTag(t)}
+                      className="rounded-full hover:bg-muted p-0.5"
+                      aria-label={`Remove ${t}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAddTag(); } }}
+                    placeholder="Add tag…"
+                    className="h-7 w-32 text-xs"
+                  />
+                  <Button size="sm" variant="outline" className="h-7" onClick={onAddTag} disabled={!tagInput.trim() || updateTags.isPending}>
+                    Add
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           {canEdit && (
             <div className="mt-8 pt-6 border-t border-border">
               <div className="flex items-center gap-2">
@@ -182,15 +233,43 @@ export default function ContactDetail() {
 }
 
 function Field({ icon: Icon, label, value, href, external }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; href?: string; external?: boolean }) {
-  const inner = (
-    <div className="flex items-start gap-2">
+  const [copied, setCopied] = useState(false);
+  const copy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success(`${label} copied`);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Could not copy");
+    }
+  };
+  const linkClass = "group flex items-start gap-2 hover:text-gold-dark transition-smooth";
+  const body = (
+    <>
       <Icon className="h-4 w-4 text-gold-dark mt-0.5 shrink-0" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-xs uppercase text-muted-foreground tracking-wide">{label}</div>
         <div className="font-medium truncate">{value}</div>
       </div>
-    </div>
+      <button
+        type="button"
+        onClick={copy}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-muted shrink-0"
+        aria-label={`Copy ${label}`}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-gold-dark" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+    </>
   );
-  if (href) return <a href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined} className="hover:text-gold-dark transition-smooth">{inner}</a>;
-  return inner;
+  if (href) {
+    return (
+      <a href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined} className={linkClass}>
+        {body}
+      </a>
+    );
+  }
+  return <div className="group flex items-start gap-2">{body}</div>;
 }

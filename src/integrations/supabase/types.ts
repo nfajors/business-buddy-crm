@@ -73,6 +73,7 @@ export type Database = {
           mobile_phone: string | null
           owner_id: string | null
           pipeline_stage: Database["public"]["Enums"]["pipeline_stage"]
+          search_tsv: unknown
           state: string | null
           tags: string[]
           title: string | null
@@ -101,6 +102,7 @@ export type Database = {
           mobile_phone?: string | null
           owner_id?: string | null
           pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
+          search_tsv?: unknown
           state?: string | null
           tags?: string[]
           title?: string | null
@@ -129,6 +131,7 @@ export type Database = {
           mobile_phone?: string | null
           owner_id?: string | null
           pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
+          search_tsv?: unknown
           state?: string | null
           tags?: string[]
           title?: string | null

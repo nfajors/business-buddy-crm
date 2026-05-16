@@ -205,6 +205,32 @@ export function useBulkAddTag() {
   });
 }
 
+// ---------- Single-contact tag editing ----------
+
+export function useUpdateContactTags(contactId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (tags: string[]) => {
+      const cleaned = Array.from(
+        new Set(tags.map((t) => t.trim()).filter(Boolean)),
+      ).slice(0, 30);
+      const { data, error } = await supabase
+        .from("contacts")
+        .update({ tags: cleaned })
+        .eq("id", contactId)
+        .select("id, tags")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contact", contactId] });
+      qc.invalidateQueries({ queryKey: ["contacts", "list"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 export function useBulkImportContacts() {
   const qc = useQueryClient();
   return useMutation({
