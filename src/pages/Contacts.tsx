@@ -105,7 +105,7 @@ export default function Contacts() {
       if (selectedIds.length > 0) {
         query = query.in("id", selectedIds);
       } else {
-        if (stageFilter !== "all") query = query.eq("pipeline_stage", stageFilter);
+        if (stageFilter !== "all") query = query.eq("pipeline_stage", stageFilter as PipelineStage);
         if (industryFilter !== "all") query = query.eq("industry", industryFilter);
         const s = debouncedSearch.trim();
         if (s) {
