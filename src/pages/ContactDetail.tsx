@@ -233,15 +233,43 @@ export default function ContactDetail() {
 }
 
 function Field({ icon: Icon, label, value, href, external }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; href?: string; external?: boolean }) {
-  const inner = (
-    <div className="flex items-start gap-2">
+  const [copied, setCopied] = useState(false);
+  const copy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success(`${label} copied`);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Could not copy");
+    }
+  };
+  const linkClass = "group flex items-start gap-2 hover:text-gold-dark transition-smooth";
+  const body = (
+    <>
       <Icon className="h-4 w-4 text-gold-dark mt-0.5 shrink-0" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-xs uppercase text-muted-foreground tracking-wide">{label}</div>
         <div className="font-medium truncate">{value}</div>
       </div>
-    </div>
+      <button
+        type="button"
+        onClick={copy}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-muted shrink-0"
+        aria-label={`Copy ${label}`}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-gold-dark" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+    </>
   );
-  if (href) return <a href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined} className="hover:text-gold-dark transition-smooth">{inner}</a>;
-  return inner;
+  if (href) {
+    return (
+      <a href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined} className={linkClass}>
+        {body}
+      </a>
+    );
+  }
+  return <div className="group flex items-start gap-2">{body}</div>;
 }
