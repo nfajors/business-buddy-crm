@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight, Download, Upload, Tag, Trash2, X } from "lucide-react";
+import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight, Download, Upload, Tag, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StageBadge } from "@/components/StageBadge";
@@ -8,16 +8,18 @@ import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { NewContactDialog } from "@/components/NewContactDialog";
 import { ImportContactsDialog } from "@/components/ImportContactsDialog";
-import { useContacts, useIndustries } from "@/lib/queries";
+import { useContacts, useIndustries, type ContactSort } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useBulkAddTag, useBulkDeleteContacts, useBulkUpdateContacts } from "@/lib/mutations";
 import { contactsToCsv, downloadCsv } from "@/lib/csv";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -38,6 +40,9 @@ export default function Contacts() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [tagInput, setTagInput] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [sort, setSort] = useState<ContactSort>("created_at");
+  const [ascending, setAscending] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const bulkUpdate = useBulkUpdateContacts();
   const bulkDelete = useBulkDeleteContacts();
@@ -60,12 +65,27 @@ export default function Contacts() {
   useEffect(() => {
     setPage(0);
     setSelected(new Set());
-  }, [debouncedSearch, stageFilter, industryFilter]);
+  }, [debouncedSearch, stageFilter, industryFilter, sort, ascending]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data, isLoading, isFetching } = useContacts({
     search: debouncedSearch,
     stage: stageFilter as PipelineStage | "all",
     industry: industryFilter,
+    sort,
+    ascending,
     page,
     pageSize: PAGE_SIZE,
   });
@@ -97,6 +117,15 @@ export default function Contacts() {
   };
 
   const clearSelection = () => setSelected(new Set());
+
+  const toggleSort = (col: ContactSort) => {
+    if (sort === col) setAscending((a) => !a);
+    else { setSort(col); setAscending(col === "first_name" || col === "company"); }
+  };
+  const SortIcon = ({ col }: { col: ContactSort }) =>
+    sort !== col ? <ArrowUpDown className="h-3 w-3 opacity-40 inline ml-1" />
+      : ascending ? <ArrowUp className="h-3 w-3 inline ml-1" />
+      : <ArrowDown className="h-3 w-3 inline ml-1" />;
 
   const exportCsv = async () => {
     setExporting(true);
@@ -197,7 +226,7 @@ export default function Contacts() {
           <div className="flex flex-col md:flex-row gap-3 p-4 border-b border-border">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search name, company, email, phone, city…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input ref={searchRef} placeholder='Search name, company, email, city…  ( press "/" )' value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="md:w-44"><SelectValue placeholder="Stage" /></SelectTrigger>
@@ -215,7 +244,18 @@ export default function Contacts() {
             </Select>
           </div>
           {isLoading ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-4 flex-1 max-w-[26%]" />
+                  <Skeleton className="h-4 flex-1 max-w-[22%] hidden md:block" />
+                  <Skeleton className="h-4 flex-1 max-w-[20%]" />
+                  <Skeleton className="h-4 w-24 hidden lg:block" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
           ) : rows.length === 0 ? (
             <EmptyState icon={Users} title="No contacts found" description="Try adjusting your search or filters, or add a new contact."
               action={<Button onClick={() => setOpenNew(true)}><Plus className="h-4 w-4 mr-1" /> New contact</Button>} />
@@ -227,7 +267,7 @@ export default function Contacts() {
                 </div>
               )}
               <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground sticky top-0 z-10">
                   <tr>
                     <th className="px-3 py-3 w-10">
                       <Checkbox
@@ -236,16 +276,28 @@ export default function Contacts() {
                         aria-label="Select page"
                       />
                     </th>
-                    <th className="px-4 py-3 font-semibold">Name</th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button type="button" onClick={() => toggleSort("first_name")} className="inline-flex items-center hover:text-foreground">
+                        Name <SortIcon col="first_name" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 font-semibold hidden md:table-cell">Title</th>
-                    <th className="px-4 py-3 font-semibold">Company</th>
-                    <th className="px-4 py-3 font-semibold hidden lg:table-cell">Location</th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button type="button" onClick={() => toggleSort("company")} className="inline-flex items-center hover:text-foreground">
+                        Company <SortIcon col="company" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 font-semibold hidden lg:table-cell">
+                      <button type="button" onClick={() => toggleSort("updated_at")} className="inline-flex items-center hover:text-foreground">
+                        Updated <SortIcon col="updated_at" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 font-semibold">Stage</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {rows.map((c) => (
-                    <tr key={c.id} className="hover:bg-secondary/40 transition-smooth">
+                    <tr key={c.id} className={`hover:bg-secondary/40 transition-smooth ${selected.has(c.id) ? "bg-secondary/40" : ""}`}>
                       <td className="px-3 py-3 w-10">
                         <Checkbox
                           checked={selected.has(c.id)}
@@ -261,7 +313,9 @@ export default function Contacts() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{c.title}</td>
                       <td className="px-4 py-3">{c.company}</td>
-                      <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{[c.city, c.state].filter(Boolean).join(", ")}</td>
+                      <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell whitespace-nowrap">
+                        {c.updated_at ? formatDistanceToNow(new Date(c.updated_at), { addSuffix: true }) : "—"}
+                      </td>
                       <td className="px-4 py-3"><StageBadge stage={c.pipeline_stage as PipelineStage} /></td>
                     </tr>
                   ))}
