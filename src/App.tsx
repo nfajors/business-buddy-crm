@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard.tsx";
 import Contacts from "./pages/Contacts.tsx";
 import ContactDetail from "./pages/ContactDetail.tsx";
 import Pipeline from "./pages/Pipeline.tsx";
+import Tasks from "./pages/Tasks.tsx";
 import Settings from "./pages/Settings.tsx";
 import { AuthProvider } from "./hooks/useAuth.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
             <Route path="/contacts/:id" element={<ProtectedRoute><ContactDetail /></ProtectedRoute>} />
             <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
