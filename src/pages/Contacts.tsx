@@ -17,7 +17,8 @@ import { useContacts, useIndustries, type ContactSort } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useBulkAddTag, useBulkDeleteContacts, useBulkUpdateContacts } from "@/lib/mutations";
 import { contactsToCsv, downloadCsv } from "@/lib/csv";
-import { supabase } from "@/integrations/supabase/client";
+import { zerodb } from "@/integrations/zerodb/client";
+import type { Contact } from "@/lib/types";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -130,25 +131,23 @@ export default function Contacts() {
   const exportCsv = async () => {
     setExporting(true);
     try {
-      let query = supabase.from("contacts").select("*");
+      let rows: Contact[] = [];
       if (selectedIds.length > 0) {
-        query = query.in("id", selectedIds);
+        rows = await Promise.all(selectedIds.map((id) => zerodb.tables.get("contacts", id)));
       } else {
-        if (stageFilter !== "all") query = query.eq("pipeline_stage", stageFilter as PipelineStage);
-        if (industryFilter !== "all") query = query.eq("industry", industryFilter);
-        const s = debouncedSearch.trim();
-        if (s) {
-          const like = `%${s.replace(/[%_]/g, "\\$&")}%`;
-          query = query.or([
-            `first_name.ilike.${like}`, `last_name.ilike.${like}`,
-            `company.ilike.${like}`, `email.ilike.${like}`, `title.ilike.${like}`,
-            `city.ilike.${like}`, `work_phone.ilike.${like}`, `mobile_phone.ilike.${like}`,
-          ].join(","));
-        }
+        const filter: Record<string, unknown> = {};
+        if (stageFilter !== "all") filter.pipeline_stage = stageFilter as PipelineStage;
+        if (industryFilter !== "all") filter.industry = industryFilter;
+        const s = debouncedSearch.trim().toLowerCase();
+        const res = await zerodb.tables.query("contacts", {
+          filter,
+          search: s ? { field: "search_blob", value: s } : undefined,
+          sort: [{ field: "created_at", direction: "desc" }],
+          limit: 10_000,
+        });
+        rows = res.records;
       }
-      const { data: all, error } = await query.order("created_at", { ascending: false }).limit(10_000);
-      if (error) throw error;
-      const csv = contactsToCsv(all ?? []);
+      const csv = contactsToCsv(rows);
       const label = selectedIds.length > 0 ? `contacts-selected-${selectedIds.length}` : "contacts";
       downloadCsv(`${label}-${new Date().toISOString().slice(0, 10)}.csv`, csv);
     } catch (e) {

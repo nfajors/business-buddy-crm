@@ -1,28 +1,32 @@
 import { z } from "zod";
-import type { Database } from "@/integrations/supabase/types";
 
-// Pull row + enum types straight from the generated Supabase schema.
-// Editing the parallel hand-written interfaces is a foot-gun (item 16).
-export type Contact = Database["public"]["Tables"]["contacts"]["Row"];
-export type ContactInsert = Database["public"]["Tables"]["contacts"]["Insert"];
-export type ContactUpdate = Database["public"]["Tables"]["contacts"]["Update"];
-export type Note = Database["public"]["Tables"]["notes"]["Row"];
-export type Activity = Database["public"]["Tables"]["activities"]["Row"];
-export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-export type Task = Database["public"]["Tables"]["tasks"]["Row"];
-export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
-export type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
-export type TaskStatus = Database["public"]["Enums"]["task_status"];
-export type TaskPriority = Database["public"]["Enums"]["task_priority"];
+// Re-export ZeroDB row types as the app's public types. Was previously
+// derived from the generated Supabase Database type; switched in #5/#6
+// alongside the call-site migration. Same names, drop-in replacement —
+// `@/lib/types` consumers don't need to know which backend they're on.
+export type {
+  Activity,
+  ActivityType,
+  AppRole,
+  Contact,
+  ContactInsert,
+  ContactUpdate,
+  EmailStatus,
+  Note,
+  PipelineStage,
+  Profile,
+  Task,
+  TaskInsert,
+  TaskPriority,
+  TaskStatus,
+  TaskUpdate,
+} from "@/integrations/zerodb/types";
 
-export type PipelineStage = Database["public"]["Enums"]["pipeline_stage"];
-export type EmailStatus = Database["public"]["Enums"]["email_status"];
-export type ActivityType = Database["public"]["Enums"]["activity_type"];
-export type AppRole = Database["public"]["Enums"]["app_role"];
+import type { PipelineStage } from "@/integrations/zerodb/types";
 
 // Zod enum schemas — added in #3 ahead of the ZeroDB migration. The NoSQL
 // Tables API has no native enum, so the app is the only thing validating
-// these values on writes. Source of truth for #4–#6.
+// these values on writes.
 export const PipelineStageSchema = z.enum(["new", "contacted", "responded", "meeting", "closed"]);
 export const ActivityTypeSchema = z.enum([
   "stage_change",

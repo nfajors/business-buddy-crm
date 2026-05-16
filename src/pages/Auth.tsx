@@ -39,12 +39,9 @@ export default function Auth() {
       if (!emailParsed.success) { toast.error(emailParsed.error.issues[0].message); return; }
 
       if (mode === "forgot") {
-        const { supabase } = await import("@/integrations/supabase/client");
-        const { error } = await supabase.auth.resetPasswordForEmail(emailParsed.data, {
-          redirectTo: `${window.location.origin}/reset-password`,
-        });
-        if (error) { toast.error(error.message); return; }
-        toast.success("If that email exists, a reset link has been sent.");
+        // Password reset endpoint TBD on ZeroDB (#4 follow-up). Until it's
+        // wired, resets are admin-mediated.
+        toast.message("Contact an admin to reset your password.");
         setMode("signin");
         return;
       }

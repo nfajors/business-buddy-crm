@@ -67,13 +67,12 @@ export interface Contact {
   updated_at: string;
 }
 
-export type ContactInsert = Omit<Contact, "id" | "created_at" | "updated_at" | "search_blob"> & {
-  id?: string;
-  created_at?: string;
-  updated_at?: string;
-  search_blob?: string;
-};
-
+// Insert + Update are intentionally lenient (every field optional) — the
+// Tables API has no schema-enforced defaults like Postgres, so the app
+// fills required fields in `stampContactForInsert` (#7). Keeping these as
+// Partial<Contact> matches the ergonomics of the Supabase Insert type
+// that call sites are coming from.
+export type ContactInsert = Partial<Contact>;
 export type ContactUpdate = Partial<Omit<Contact, "id">>;
 
 export interface Note {
@@ -111,12 +110,7 @@ export interface Task {
   updated_at: string;
 }
 
-export type TaskInsert = Omit<Task, "id" | "created_at" | "updated_at"> & {
-  id?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
+export type TaskInsert = Partial<Task>;
 export type TaskUpdate = Partial<Omit<Task, "id">>;
 
 export interface Profile {
@@ -175,9 +169,9 @@ export type TableName =
 
 export interface TableSchemas {
   contacts: { Row: Contact; Insert: ContactInsert; Update: ContactUpdate };
-  notes: { Row: Note; Insert: Omit<Note, "id" | "created_at"> & { id?: string; created_at?: string }; Update: Partial<Note> };
-  activities: { Row: Activity; Insert: Omit<Activity, "id" | "created_at"> & { id?: string; created_at?: string }; Update: Partial<Activity> };
+  notes: { Row: Note; Insert: Partial<Note>; Update: Partial<Note> };
+  activities: { Row: Activity; Insert: Partial<Activity>; Update: Partial<Activity> };
   tasks: { Row: Task; Insert: TaskInsert; Update: TaskUpdate };
-  profiles: { Row: Profile; Insert: Omit<Profile, "created_at" | "updated_at"> & { created_at?: string; updated_at?: string }; Update: Partial<Profile> };
-  user_roles: { Row: UserRole; Insert: Omit<UserRole, "id" | "created_at"> & { id?: string; created_at?: string }; Update: Partial<UserRole> };
+  profiles: { Row: Profile; Insert: Partial<Profile>; Update: Partial<Profile> };
+  user_roles: { Row: UserRole; Insert: Partial<UserRole>; Update: Partial<UserRole> };
 }
