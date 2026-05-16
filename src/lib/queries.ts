@@ -101,19 +101,15 @@ export function useContacts(args: ContactsQueryArgs) {
 
       const s = search.trim();
       if (s) {
-        const like = `%${s.replace(/[%_]/g, "\\$&")}%`;
-        q = q.or(
-          [
-            `first_name.ilike.${like}`,
-            `last_name.ilike.${like}`,
-            `company.ilike.${like}`,
-            `email.ilike.${like}`,
-            `title.ilike.${like}`,
-            `city.ilike.${like}`,
-            `work_phone.ilike.${like}`,
-            `mobile_phone.ilike.${like}`,
-          ].join(","),
-        );
+        // Prefer full-text on the indexed tsvector. For single-token searches
+        // append :* for prefix matches ("ali" → matches "Alice"). For multi-
+        // token searches let websearch_to_tsquery handle quoting + boolean.
+        const tokens = s.split(/\s+/).filter(Boolean);
+        if (tokens.length === 1 && !/[:&|!()"']/.test(tokens[0])) {
+          q = q.textSearch("search_tsv", `${tokens[0]}:*`, { type: "tsquery" });
+        } else {
+          q = q.textSearch("search_tsv", s, { type: "websearch" });
+        }
       }
 
       const { data, error, count } = await q.range(from, to);
