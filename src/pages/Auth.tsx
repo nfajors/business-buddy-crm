@@ -8,18 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Brand } from "@/components/Brand";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
 
 const emailSchema = z.string().trim().email({ message: "Invalid email" }).max(255);
-const passwordSchema = z.string().min(8, { message: "Password must be at least 8 characters" }).max(72);
-const nameSchema = z.string().trim().min(1, { message: "Name is required" }).max(100);
 
 export default function Auth() {
-  const { user, loading, signIn, signUp } = useAuth();
+  const { user, loading, signIn } = useAuth();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">(params.get("mode") === "signup" ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "forgot">(params.get("mode") === "forgot" ? "forgot" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,7 +25,7 @@ export default function Auth() {
 
   useEffect(() => {
     const m = params.get("mode");
-    if (m === "signup" || m === "forgot") setMode(m);
+    if (m === "forgot") setMode("forgot");
     else setMode("signin");
   }, [params]);
 
@@ -54,14 +52,7 @@ export default function Auth() {
       const passParsed = passwordSchema.safeParse(password);
       if (!passParsed.success) { toast.error(passParsed.error.issues[0].message); return; }
 
-      if (mode === "signup") {
-        const nameParsed = nameSchema.safeParse(displayName);
-        if (!nameParsed.success) { toast.error(nameParsed.error.issues[0].message); return; }
-        const { error } = await signUp(emailParsed.data, passParsed.data, nameParsed.data);
-        if (error) { toast.error(error); return; }
-        toast.success("Account created! Welcome to Winning.Careers CRM.");
-        navigate("/dashboard", { replace: true });
-      } else {
+      {
         const { error } = await signIn(emailParsed.data, passParsed.data);
         if (error) {
           toast.error(error.includes("Invalid") ? "Invalid email or password." : error);
@@ -96,29 +87,15 @@ export default function Auth() {
             <Brand className="h-12 w-auto max-w-[260px] object-contain" />
           </div>
           <h1 className="text-2xl font-bold">
-            {mode === "signin" ? "Sign in" : mode === "signup" ? "Create staff account" : "Reset password"}
+            {mode === "signin" ? "Sign in" : "Reset password"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signin"
               ? "Welcome back. Pick up where you left off."
-              : mode === "signup"
-              ? "Internal use only — Winning.Careers staff."
               : "Enter your email and we'll send you a reset link."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Display name</Label>
-                <Input
-                  id="name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Jane Doe"
-                  autoComplete="name"
-                />
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -150,8 +127,8 @@ export default function Auth() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  placeholder={PASSWORD_HINT}
+                  autoComplete="current-password"
                   required
                 />
               </div>
@@ -159,31 +136,23 @@ export default function Auth() {
 
             <Button type="submit" className="w-full shadow-gold" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
+              {mode === "signin" ? "Sign in" : "Send reset link"}
             </Button>
           </form>
 
-          <p className="text-sm text-muted-foreground text-center mt-6">
-            {mode === "forgot" ? (
-              <>
-                Remembered it?{" "}
-                <button type="button" onClick={() => setMode("signin")} className="text-gold-dark font-semibold hover:underline">
-                  Back to sign in
-                </button>
-              </>
-            ) : (
-              <>
-                {mode === "signin" ? "Don't have an account? " : "Already have an account? "}
-                <button
-                  type="button"
-                  onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                  className="text-gold-dark font-semibold hover:underline"
-                >
-                  {mode === "signin" ? "Sign up" : "Sign in"}
-                </button>
-              </>
-            )}
-          </p>
+          {mode === "forgot" && (
+            <p className="text-sm text-muted-foreground text-center mt-6">
+              Remembered it?{" "}
+              <button type="button" onClick={() => setMode("signin")} className="text-gold-dark font-semibold hover:underline">
+                Back to sign in
+              </button>
+            </p>
+          )}
+          {mode === "signin" && (
+            <p className="text-xs text-muted-foreground text-center mt-6">
+              Accounts are provisioned by an admin. Contact the team if you need access.
+            </p>
+          )}
         </div>
       </div>
     </div>
