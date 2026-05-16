@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
+import { fetchAllContacts } from "@/lib/seed";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -22,7 +22,7 @@ export default function Pipeline() {
   };
   useEffect(() => {
     if (!user) return;
-    (async () => { await seedContactsIfEmpty(); await load(); })();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
   const handleDrop = async (stage: PipelineStage) => {
