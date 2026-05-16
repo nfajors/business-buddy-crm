@@ -8,8 +8,7 @@ import { StageBadge } from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
 import { Contact, PIPELINE_STAGES, PipelineStage, Activity } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
-import { seedContactsIfEmpty, fetchAllContacts } from "@/lib/seed";
-import { toast } from "sonner";
+import { fetchAllContacts } from "@/lib/seed";
 import { formatDistanceToNow } from "date-fns";
 
 export default function Dashboard() {
@@ -19,11 +18,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!user) return;
-    (async () => {
-      const inserted = await seedContactsIfEmpty();
-      if (inserted > 0) toast.success(`Loaded ${inserted} starter contacts`);
-      await load();
-    })();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
   const load = async () => {

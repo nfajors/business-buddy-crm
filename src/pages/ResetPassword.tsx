@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Brand } from "@/components/Brand";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
-const passwordSchema = z.string().min(8, { message: "Password must be at least 8 characters" }).max(72);
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -48,7 +46,7 @@ export default function ResetPassword() {
         <Brand className="h-9 mb-6" />
         <h1 className="text-2xl font-bold">Set a new password</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {ready ? "Choose a strong password (min. 8 characters)." : "Validating reset link…"}
+          {ready ? PASSWORD_HINT : "Validating reset link…"}
         </p>
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
           <div className="space-y-1.5">

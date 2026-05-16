@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, LogOut, Save, Sparkles } from "lucide-react";
+import { Loader2, LogOut, Save, ShieldCheck } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
+import { format } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 const nameSchema = z.string().trim().min(1).max(100);
-const passwordSchema = z.string().min(8).max(72);
 export default function Settings() {
   const { user, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
@@ -40,7 +41,7 @@ export default function Settings() {
   };
   const changePassword = async () => {
     const parsed = passwordSchema.safeParse(newPassword);
-    if (!parsed.success) { toast.error("Password must be at least 8 characters"); return; }
+    if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setSavingPassword(true);
     const { error } = await supabase.auth.updateUser({ password: parsed.data });
     setSavingPassword(false);
@@ -66,10 +67,16 @@ export default function Settings() {
                   <Label>Role</Label>
                   <div className="flex items-center gap-2 text-sm">
                     {isAdmin ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-secondary text-gold-dark font-semibold"><Sparkles className="h-3 w-3" /> Admin</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-secondary text-gold-dark font-semibold"><ShieldCheck className="h-3 w-3" /> Admin</span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-muted">User</span>
                     )}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Last sign-in</Label>
+                  <div className="text-sm text-muted-foreground">
+                    {user?.last_sign_in_at ? format(new Date(user.last_sign_in_at), "PPpp") : "—"}
                   </div>
                 </div>
                 <Button onClick={saveProfile} disabled={savingProfile}>
@@ -79,9 +86,9 @@ export default function Settings() {
             </section>
             <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
               <h3 className="font-bold mb-1">Change password</h3>
-              <p className="text-sm text-muted-foreground mb-4">At least 8 characters.</p>
+              <p className="text-sm text-muted-foreground mb-4">{PASSWORD_HINT}</p>
               <div className="flex gap-2">
-                <Input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                <Input type="password" placeholder={PASSWORD_HINT} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
                 <Button onClick={changePassword} disabled={savingPassword || !newPassword}>
                   {savingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Update
                 </Button>

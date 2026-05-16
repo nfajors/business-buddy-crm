@@ -54,85 +54,88 @@ export type Database = {
       }
       contacts: {
         Row: {
-          annual_revenue: number
-          city: string
+          annual_revenue: number | null
+          city: string | null
           company: string
-          company_city: string
-          country: string
+          company_city: string | null
+          country: string | null
           created_at: string
           created_by: string | null
-          email: string
-          email_status: string
-          employees: number
+          email: string | null
+          email_status: Database["public"]["Enums"]["email_status"] | null
+          employees: number | null
           first_name: string
           id: string
-          industry: string
+          industry: string | null
           last_activity_at: string | null
-          last_name: string
-          linkedin: string
-          mobile_phone: string
+          last_name: string | null
+          linkedin: string | null
+          mobile_phone: string | null
           owner_id: string | null
           pipeline_stage: Database["public"]["Enums"]["pipeline_stage"]
-          state: string
+          state: string | null
           tags: string[]
-          title: string
+          title: string | null
           updated_at: string
-          website: string
-          work_phone: string
+          updated_by: string | null
+          website: string | null
+          work_phone: string | null
         }
         Insert: {
-          annual_revenue?: number
-          city?: string
+          annual_revenue?: number | null
+          city?: string | null
           company?: string
-          company_city?: string
-          country?: string
+          company_city?: string | null
+          country?: string | null
           created_at?: string
           created_by?: string | null
-          email?: string
-          email_status?: string
-          employees?: number
+          email?: string | null
+          email_status?: Database["public"]["Enums"]["email_status"] | null
+          employees?: number | null
           first_name?: string
           id?: string
-          industry?: string
+          industry?: string | null
           last_activity_at?: string | null
-          last_name?: string
-          linkedin?: string
-          mobile_phone?: string
+          last_name?: string | null
+          linkedin?: string | null
+          mobile_phone?: string | null
           owner_id?: string | null
           pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
-          state?: string
+          state?: string | null
           tags?: string[]
-          title?: string
+          title?: string | null
           updated_at?: string
-          website?: string
-          work_phone?: string
+          updated_by?: string | null
+          website?: string | null
+          work_phone?: string | null
         }
         Update: {
-          annual_revenue?: number
-          city?: string
+          annual_revenue?: number | null
+          city?: string | null
           company?: string
-          company_city?: string
-          country?: string
+          company_city?: string | null
+          country?: string | null
           created_at?: string
           created_by?: string | null
-          email?: string
-          email_status?: string
-          employees?: number
+          email?: string | null
+          email_status?: Database["public"]["Enums"]["email_status"] | null
+          employees?: number | null
           first_name?: string
           id?: string
-          industry?: string
+          industry?: string | null
           last_activity_at?: string | null
-          last_name?: string
-          linkedin?: string
-          mobile_phone?: string
+          last_name?: string | null
+          linkedin?: string | null
+          mobile_phone?: string | null
           owner_id?: string | null
           pipeline_stage?: Database["public"]["Enums"]["pipeline_stage"]
-          state?: string
+          state?: string | null
           tags?: string[]
-          title?: string
+          title?: string | null
           updated_at?: string
-          website?: string
-          work_phone?: string
+          updated_by?: string | null
+          website?: string | null
+          work_phone?: string | null
         }
         Relationships: []
       }
@@ -143,6 +146,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          updated_by: string | null
         }
         Insert: {
           author_id?: string | null
@@ -150,6 +154,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          updated_by?: string | null
         }
         Update: {
           author_id?: string | null
@@ -157,6 +162,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -235,6 +241,15 @@ export type Database = {
         | "meeting"
         | "created"
       app_role: "admin" | "user"
+      email_status:
+        | "unknown"
+        | "valid"
+        | "invalid"
+        | "catchall"
+        | "accept_all"
+        | "disposable"
+        | "role"
+        | "unverified"
       pipeline_stage: "new" | "contacted" | "responded" | "meeting" | "closed"
     }
     CompositeTypes: {
@@ -372,6 +387,16 @@ export const Constants = {
         "created",
       ],
       app_role: ["admin", "user"],
+      email_status: [
+        "unknown",
+        "valid",
+        "invalid",
+        "catchall",
+        "accept_all",
+        "disposable",
+        "role",
+        "unverified",
+      ],
       pipeline_stage: ["new", "contacted", "responded", "meeting", "closed"],
     },
   },

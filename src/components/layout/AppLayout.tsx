@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Kanban, Settings, LogOut, Menu, X, Sparkles } from "lucide-react";
+import { LayoutDashboard, Users, Kanban, Settings, LogOut, Menu, X, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Brand } from "@/components/Brand";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <div className="px-2">
             <div className="text-xs text-muted-foreground">Signed in as</div>
             <div className="text-sm font-medium truncate">{user?.email}</div>
-            {isAdmin && <div className="inline-flex items-center gap-1 text-xs text-gold mt-1"><Sparkles className="h-3 w-3" /> Admin</div>}
+            {isAdmin && <div className="inline-flex items-center gap-1 text-xs text-gold mt-1"><ShieldCheck className="h-3 w-3" /> Admin</div>}
           </div>
           <Button variant="ghost" size="sm" onClick={handleSignOut} className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-gold">
             <LogOut className="h-4 w-4 mr-2" /> Sign out
