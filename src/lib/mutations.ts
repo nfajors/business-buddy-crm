@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { ContactInsert, ContactUpdate, PipelineStage } from "@/lib/types";
+import type { ContactInsert, ContactUpdate, PipelineStage, TaskInsert, TaskStatus, TaskUpdate } from "@/lib/types";
 
 function invalidateContactLists(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["contacts", "list"] });
@@ -133,6 +133,176 @@ export function useAddNote(contactId: string) {
       qc.invalidateQueries({ queryKey: ["notes", contactId] });
       qc.invalidateQueries({ queryKey: ["activities", contactId] });
       qc.invalidateQueries({ queryKey: ["activities", "recent"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ---------- Bulk contact actions ----------
+
+export function useBulkUpdateContacts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, patch }: { ids: string[]; patch: ContactUpdate }) => {
+      if (ids.length === 0) return 0;
+      const { error, count } = await supabase
+        .from("contacts")
+        .update(patch, { count: "exact" })
+        .in("id", ids);
+      if (error) throw error;
+      return count ?? ids.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Updated ${count} contact${count === 1 ? "" : "s"}`);
+      invalidateContactLists(qc);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkDeleteContacts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (ids.length === 0) return 0;
+      const { error, count } = await supabase
+        .from("contacts")
+        .delete({ count: "exact" })
+        .in("id", ids);
+      if (error) throw error;
+      return count ?? ids.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Deleted ${count} contact${count === 1 ? "" : "s"}`);
+      invalidateContactLists(qc);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkAddTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, tag }: { ids: string[]; tag: string }) => {
+      const cleaned = tag.trim();
+      if (!cleaned || ids.length === 0) return 0;
+      // Fetch existing tags then merge — small N expected from selection.
+      const { data, error } = await supabase.from("contacts").select("id, tags").in("id", ids);
+      if (error) throw error;
+      await Promise.all(
+        (data ?? []).map((row) => {
+          const next = Array.from(new Set([...(row.tags ?? []), cleaned]));
+          return supabase.from("contacts").update({ tags: next }).eq("id", row.id);
+        }),
+      );
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Tagged ${count} contact${count === 1 ? "" : "s"}`);
+      invalidateContactLists(qc);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useBulkImportContacts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (rows: ContactInsert[]) => {
+      if (rows.length === 0) return { inserted: 0, failed: 0 };
+      // Chunk to keep payloads small + isolate row-level errors.
+      const CHUNK = 200;
+      let inserted = 0;
+      let failed = 0;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const slice = rows.slice(i, i + CHUNK);
+        const { error, count } = await supabase.from("contacts").insert(slice, { count: "exact" });
+        if (error) {
+          failed += slice.length;
+        } else {
+          inserted += count ?? slice.length;
+        }
+      }
+      return { inserted, failed };
+    },
+    onSuccess: ({ inserted, failed }) => {
+      if (inserted) toast.success(`Imported ${inserted} contact${inserted === 1 ? "" : "s"}`);
+      if (failed) toast.error(`${failed} row${failed === 1 ? "" : "s"} failed (duplicates or invalid email)`);
+      invalidateContactLists(qc);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+// ---------- Tasks ----------
+
+function invalidateTasks(qc: ReturnType<typeof useQueryClient>, contactId?: string | null) {
+  qc.invalidateQueries({ queryKey: ["tasks"] });
+  if (contactId) qc.invalidateQueries({ queryKey: ["activities", contactId] });
+  qc.invalidateQueries({ queryKey: ["activities", "recent"] });
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: TaskInsert) => {
+      const { data, error } = await supabase.from("tasks").insert(input).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success("Task created");
+      invalidateTasks(qc, data?.contact_id ?? null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useUpdateTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: TaskUpdate }) => {
+      const { data, error } = await supabase.from("tasks").update(patch).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      invalidateTasks(qc, data?.contact_id ?? null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useToggleTaskStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, userId }: { id: string; status: TaskStatus; userId?: string }) => {
+      const patch: TaskUpdate = {
+        status,
+        completed_at: status === "done" ? new Date().toISOString() : null,
+        completed_by: status === "done" ? userId ?? null : null,
+      };
+      const { data, error } = await supabase.from("tasks").update(patch).eq("id", id).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      invalidateTasks(qc, data?.contact_id ?? null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useDeleteTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; contactId?: string | null }) => {
+      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, vars) => {
+      toast.success("Task deleted");
+      invalidateTasks(qc, vars.contactId ?? null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
