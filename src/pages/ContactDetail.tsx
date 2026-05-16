@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { EditContactDialog } from "@/components/EditContactDialog";
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function ContactDetail() {
   const [noteText, setNoteText] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingStage, setSavingStage] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   useEffect(() => { if (id) load(); /* eslint-disable-next-line */ }, [id]);
   const load = async () => {
     if (!id) return;
@@ -106,6 +108,10 @@ export default function ContactDetail() {
           </div>
           {(isAdmin || contact.created_by === user?.id) && (
             <div className="mt-8 pt-6 border-t border-border">
+              <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4 mr-1" /> Edit contact
+              </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
@@ -123,9 +129,11 @@ export default function ContactDetail() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              </div>
             </div>
           )}
         </div>
+        <EditContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} onSaved={load} />
         <div className="grid lg:grid-cols-2 gap-6 mt-6">
           <div className="bg-card border border-border rounded-xl p-6 shadow-elegant">
             <h3 className="font-bold mb-4">Notes</h3>
