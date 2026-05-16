@@ -93,7 +93,7 @@ export default function Auth() {
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex justify-center lg:justify-start">
-            <Brand className="h-12 w-auto max-w-[260px] object-contain invert" />
+            <Brand className="h-12 w-auto max-w-[260px] object-contain" />
           </div>
           <h1 className="text-2xl font-bold">
             {mode === "signin" ? "Sign in" : mode === "signup" ? "Create staff account" : "Reset password"}
