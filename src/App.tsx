@@ -10,7 +10,6 @@ import Dashboard from "./pages/Dashboard.tsx";
 import Contacts from "./pages/Contacts.tsx";
 import ContactDetail from "./pages/ContactDetail.tsx";
 import Pipeline from "./pages/Pipeline.tsx";
-import Pricing from "./pages/Pricing.tsx";
 import Settings from "./pages/Settings.tsx";
 import { AuthProvider } from "./hooks/useAuth.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
@@ -27,7 +26,6 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/pricing" element={<Pricing />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
             <Route path="/contacts/:id" element={<ProtectedRoute><ContactDetail /></ProtectedRoute>} />
