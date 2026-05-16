@@ -1,6 +1,6 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { Activity, Contact, Note, PipelineStage } from "@/lib/types";
+import type { Activity, Contact, Note, PipelineStage, Task, TaskStatus } from "@/lib/types";
 import { PIPELINE_STAGES } from "@/lib/types";
 
 // ---------- Dashboard ----------
@@ -226,5 +226,33 @@ export function useContactActivities(contactId: string | undefined, limit = 20) 
       if (error) throw error;
       return data ?? [];
     },
+  });
+}
+
+// ---------- Tasks ----------
+
+export type TasksQueryArgs = {
+  contactId?: string;
+  status?: TaskStatus | "all";
+  assignee?: string | "all" | "me";
+  currentUserId?: string;
+};
+
+export function useTasks(args: TasksQueryArgs = {}) {
+  const { contactId, status = "all", assignee = "all", currentUserId } = args;
+  return useQuery({
+    queryKey: ["tasks", { contactId: contactId ?? null, status, assignee, currentUserId: currentUserId ?? null }],
+    queryFn: async (): Promise<Task[]> => {
+      let q = supabase.from("tasks").select("*");
+      if (contactId) q = q.eq("contact_id", contactId);
+      if (status !== "all") q = q.eq("status", status);
+      if (assignee === "me" && currentUserId) q = q.eq("assignee_id", currentUserId);
+      else if (assignee !== "all" && assignee !== "me") q = q.eq("assignee_id", assignee);
+      q = q.order("status", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
+      const { data, error } = await q.limit(500);
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 15_000,
   });
 }
