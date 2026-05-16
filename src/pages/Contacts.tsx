@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Loader2, Search, Users, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,12 +15,22 @@ import { useContacts, useIndustries } from "@/lib/queries";
 const PAGE_SIZE = 50;
 
 export default function Contacts() {
+  const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>(params.get("stage") ?? "all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
   const [openNew, setOpenNew] = useState(false);
+
+  // Keep ?stage= in sync so links from the pipeline land filtered.
+  useEffect(() => {
+    const next = new URLSearchParams(params);
+    if (stageFilter === "all") next.delete("stage");
+    else next.set("stage", stageFilter);
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageFilter]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
