@@ -97,7 +97,7 @@ export function useUpdateStage() {
         },
       );
       // Update detail cache too if it's loaded.
-      const prevContact = qc.getQueryData(["contact", id]);
+      const prevContact = qc.getQueryData<Record<string, unknown>>(["contact", id]);
       if (prevContact) {
         qc.setQueryData(["contact", id], { ...prevContact, pipeline_stage: stage });
       }
