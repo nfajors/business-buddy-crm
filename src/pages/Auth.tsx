@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Brand } from "@/components/Brand";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const emailSchema = z.string().trim().email({ message: "Invalid email" }).max(255);
@@ -64,15 +64,13 @@ export default function Auth() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-10 gradient-dark text-white">
-        <Link to="/" className="flex items-center gap-2 text-white/80 hover:text-white text-sm">
-          <ArrowLeft className="h-4 w-4" /> Back to home
-        </Link>
+        <Brand className="h-9" />
         <div>
           <h2 className="text-4xl font-black leading-tight">
-            Bridge the gap. <span className="text-gold">Win more careers.</span>
+            Winning.Careers <span className="text-gold">internal CRM.</span>
           </h2>
           <p className="text-white/70 mt-4 max-w-md">
-            The premium CRM for career services teams. Built for purpose, passion, and precision.
+            Staff workspace for managing B2B outreach to universities and career-services partners.
           </p>
         </div>
         <div className="text-xs text-white/50">© {new Date().getFullYear()} Winning.Careers</div>
@@ -84,12 +82,12 @@ export default function Auth() {
             <Brand className="h-9" />
           </div>
           <h1 className="text-2xl font-bold">
-            {mode === "signin" ? "Sign in" : "Create your account"}
+            {mode === "signin" ? "Sign in" : "Create staff account"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signin"
               ? "Welcome back. Pick up where you left off."
-              : "Start managing your outreach in minutes."}
+              : "Internal use only — Winning.Careers staff."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
