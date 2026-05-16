@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
-import { Users, TrendingUp, MessageCircle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
+import { Users, TrendingUp, MessageCircle, CheckCircle2, ArrowRight } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StageBadge } from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PIPELINE_STAGES } from "@/lib/types";
 import { useDashboardStats, useRecentActivities } from "@/lib/queries";
 import { formatDistanceToNow } from "date-fns";
@@ -26,7 +27,31 @@ export default function Dashboard() {
         <PageHeader title="Dashboard" description="Your outreach at a glance."
           action={<Button asChild><Link to="/contacts">View all contacts <ArrowRight className="h-4 w-4 ml-1" /></Link></Button>} />
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-card border border-border rounded-xl p-5 shadow-elegant">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-16 mt-3" />
+                </div>
+              ))}
+            </div>
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-card border border-border rounded-xl p-6 shadow-elegant space-y-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="flex justify-between"><Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-8" /></div>
+                    <Skeleton className="h-2 w-full" />
+                  </div>
+                ))}
+              </div>
+              <div className="bg-card border border-border rounded-xl p-6 shadow-elegant space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="space-y-1"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-3 w-1/3" /></div>
+                ))}
+              </div>
+            </div>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
