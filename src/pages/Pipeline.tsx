@@ -1,78 +1,147 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { useDraggable } from "@dnd-kit/core";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { Contact, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
-import { fetchAllContacts } from "@/lib/seed";
-import { useAuth } from "@/hooks/useAuth";
-import { toast } from "sonner";
+import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
+import { PIPELINE_COLUMN_CAP, PipelineCard, usePipeline } from "@/lib/queries";
+import { useUpdateStage } from "@/lib/mutations";
 
 export default function Pipeline() {
-  const { user } = useAuth();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const load = async () => {
-    setLoading(true);
-    const data = await fetchAllContacts<Contact>("updated_at");
-    setContacts(data);
-    setLoading(false);
-  };
+  const { data, isLoading } = usePipeline();
+  const updateStage = useUpdateStage();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor),
+  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const columns = data ?? ({} as Record<PipelineStage, PipelineCard[]>);
+
+  const activeCard = useMemo(() => {
+    if (!activeId) return null;
+    for (const stage of PIPELINE_STAGES) {
+      const found = columns[stage.value]?.find((c) => c.id === activeId);
+      if (found) return found;
+    }
+    return null;
+  }, [activeId, columns]);
+
+  // Detail-page link uses contact id, so we expose pendingId so the user
+  // sees a visual cue while the mutation is in flight.
+  const [pendingId, setPendingId] = useState<string | null>(null);
   useEffect(() => {
-    if (!user) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-  const handleDrop = async (stage: PipelineStage) => {
-    if (!draggingId) return;
-    const c = contacts.find((x) => x.id === draggingId);
-    setDraggingId(null);
-    if (!c || c.pipeline_stage === stage) return;
-    setContacts((prev) => prev.map((x) => x.id === c.id ? { ...x, pipeline_stage: stage } : x));
-    const { error } = await supabase.from("contacts").update({ pipeline_stage: stage }).eq("id", c.id);
-    if (error) { toast.error(error.message); load(); }
-    else toast.success(`Moved to ${PIPELINE_STAGES.find((s) => s.value === stage)?.label}`);
+    if (!updateStage.isPending) setPendingId(null);
+  }, [updateStage.isPending]);
+
+  const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
+  const onDragEnd = (e: DragEndEvent) => {
+    setActiveId(null);
+    if (!e.over) return;
+    const id = String(e.active.id);
+    const stage = String(e.over.id) as PipelineStage;
+    const current = e.active.data.current?.stage as PipelineStage | undefined;
+    if (!current || current === stage) return;
+    setPendingId(id);
+    updateStage.mutate({ id, stage });
   };
+
   return (
     <AppLayout>
       <div className="px-6 lg:px-10 py-8 max-w-[100rem] mx-auto">
         <PageHeader title="Pipeline" description="Drag contacts between stages to update outreach status." />
-        {loading ? (
+        {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {PIPELINE_STAGES.map((stage) => {
-              const items = contacts.filter((c) => c.pipeline_stage === stage.value);
-              return (
-                <div key={stage.value} onDragOver={(e) => e.preventDefault()} onDrop={() => handleDrop(stage.value)}
-                  className="bg-secondary/40 rounded-xl p-3 min-h-[400px] border border-border">
-                  <div className="flex items-center justify-between mb-3 px-1">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(var(--${stage.color}))` }} />
-                      <h3 className="font-bold text-sm">{stage.label}</h3>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {PIPELINE_STAGES.map((stage) => {
+                const items = columns[stage.value] ?? [];
+                return (
+                  <Column key={stage.value} stage={stage.value} label={stage.label} color={stage.color} count={items.length}>
+                    <div className="space-y-2">
+                      {items.map((c) => (
+                        <Card key={c.id} card={c} pending={pendingId === c.id} />
+                      ))}
+                      {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No contacts in this stage.</p>}
+                      {items.length >= PIPELINE_COLUMN_CAP && (
+                        <Link to={`/contacts?stage=${stage.value}`} className="block text-xs text-center text-gold-dark hover:underline py-1">
+                          View all →
+                        </Link>
+                      )}
                     </div>
-                    <span className="text-xs text-muted-foreground">{items.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {items.map((c) => (
-                      <Link key={c.id} to={`/contacts/${c.id}`} draggable
-                        onDragStart={() => setDraggingId(c.id)} onDragEnd={() => setDraggingId(null)}
-                        className="block bg-card rounded-lg p-3 shadow-elegant hover:shadow-hover cursor-grab active:cursor-grabbing transition-smooth">
-                        <div className="font-semibold text-sm">{c.first_name} {c.last_name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{c.title}</div>
-                        <div className="text-xs text-gold-dark mt-1 truncate">{c.company}</div>
-                      </Link>
-                    ))}
-                    {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">Drop here</p>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  </Column>
+                );
+              })}
+            </div>
+            <DragOverlay>
+              {activeCard ? <CardSurface card={activeCard} dragging /> : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
     </AppLayout>
+  );
+}
+
+function Column({ stage, label, color, count, children }: { stage: PipelineStage; label: string; color: string; count: number; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded-xl p-3 min-h-[400px] border transition-colors ${isOver ? "bg-secondary border-gold" : "bg-secondary/40 border-border"}`}
+    >
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(var(--${color}))` }} />
+          <h3 className="font-bold text-sm">{label}</h3>
+        </div>
+        <span className="text-xs text-muted-foreground">{count}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Card({ card, pending }: { card: PipelineCard; pending: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: card.id,
+    data: { stage: card.pipeline_stage },
+    disabled: pending,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`${isDragging ? "opacity-30" : ""} ${pending ? "opacity-60 pointer-events-none" : ""}`}
+    >
+      <Link to={`/contacts/${card.id}`} onClick={(e) => { if (pending) e.preventDefault(); }}>
+        <CardSurface card={card} />
+      </Link>
+    </div>
+  );
+}
+
+function CardSurface({ card, dragging }: { card: PipelineCard; dragging?: boolean }) {
+  return (
+    <div className={`block bg-card rounded-lg p-3 shadow-elegant ${dragging ? "shadow-hover ring-2 ring-gold" : "hover:shadow-hover"} cursor-grab active:cursor-grabbing transition-smooth`}>
+      <div className="font-semibold text-sm">{card.first_name} {card.last_name}</div>
+      <div className="text-xs text-muted-foreground truncate">{card.title}</div>
+      <div className="text-xs text-gold-dark mt-1 truncate">{card.company}</div>
+    </div>
   );
 }

@@ -1,42 +1,24 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Users, TrendingUp, MessageCircle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StageBadge } from "@/components/StageBadge";
 import { Button } from "@/components/ui/button";
-import { Contact, PIPELINE_STAGES, PipelineStage, Activity } from "@/lib/types";
-import { useAuth } from "@/hooks/useAuth";
-import { fetchAllContacts } from "@/lib/seed";
+import { PIPELINE_STAGES } from "@/lib/types";
+import { useDashboardStats, useRecentActivities } from "@/lib/queries";
 import { formatDistanceToNow } from "date-fns";
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    if (!user) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-  const load = async () => {
-    setLoading(true);
-    const [cData, { data: aData }] = await Promise.all([
-      fetchAllContacts<Contact>("created_at"),
-      supabase.from("activities").select("*").order("created_at", { ascending: false }).limit(8),
-    ]);
-    setContacts(cData);
-    setActivities((aData ?? []) as unknown as Activity[]);
-    setLoading(false);
-  };
-  const stageCount = (s: PipelineStage) => contacts.filter((c) => c.pipeline_stage === s).length;
-  const stats = [
-    { label: "Total contacts", value: contacts.length, icon: Users },
-    { label: "Contacted", value: stageCount("contacted"), icon: MessageCircle },
-    { label: "Responded", value: stageCount("responded"), icon: TrendingUp },
-    { label: "Closed", value: stageCount("closed"), icon: CheckCircle2 },
+  const { data: stats, isLoading: loadingStats } = useDashboardStats();
+  const { data: activities = [] } = useRecentActivities(8);
+  const loading = loadingStats;
+  const total = stats?.total ?? 0;
+  const byStage = stats?.byStage ?? { new: 0, contacted: 0, responded: 0, meeting: 0, closed: 0 };
+  const tiles = [
+    { label: "Total contacts", value: total, icon: Users },
+    { label: "Contacted", value: byStage.contacted, icon: MessageCircle },
+    { label: "Responded", value: byStage.responded, icon: TrendingUp },
+    { label: "Closed", value: byStage.closed, icon: CheckCircle2 },
   ];
   return (
     <AppLayout>
@@ -48,7 +30,7 @@ export default function Dashboard() {
         ) : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              {stats.map((s) => (
+              {tiles.map((s) => (
                 <div key={s.label} className="bg-card border border-border rounded-xl p-5 shadow-elegant">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">{s.label}</span>
@@ -63,8 +45,8 @@ export default function Dashboard() {
                 <h3 className="font-bold mb-4">Pipeline distribution</h3>
                 <div className="space-y-3">
                   {PIPELINE_STAGES.map((stage) => {
-                    const n = stageCount(stage.value);
-                    const pct = contacts.length ? (n / contacts.length) * 100 : 0;
+                    const n = byStage[stage.value];
+                    const pct = total ? (n / total) * 100 : 0;
                     return (
                       <div key={stage.value}>
                         <div className="flex justify-between text-sm mb-1">

@@ -1,4 +1,18 @@
-export type PipelineStage = "new" | "contacted" | "responded" | "meeting" | "closed";
+import type { Database } from "@/integrations/supabase/types";
+
+// Pull row + enum types straight from the generated Supabase schema.
+// Editing the parallel hand-written interfaces is a foot-gun (item 16).
+export type Contact = Database["public"]["Tables"]["contacts"]["Row"];
+export type ContactInsert = Database["public"]["Tables"]["contacts"]["Insert"];
+export type ContactUpdate = Database["public"]["Tables"]["contacts"]["Update"];
+export type Note = Database["public"]["Tables"]["notes"]["Row"];
+export type Activity = Database["public"]["Tables"]["activities"]["Row"];
+export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+
+export type PipelineStage = Database["public"]["Enums"]["pipeline_stage"];
+export type EmailStatus = Database["public"]["Enums"]["email_status"];
+export type ActivityType = Database["public"]["Enums"]["activity_type"];
+export type AppRole = Database["public"]["Enums"]["app_role"];
 
 export const PIPELINE_STAGES: { value: PipelineStage; label: string; color: string }[] = [
   { value: "new", label: "New", color: "stage-new" },
@@ -7,57 +21,3 @@ export const PIPELINE_STAGES: { value: PipelineStage; label: string; color: stri
   { value: "meeting", label: "Meeting Scheduled", color: "stage-meeting" },
   { value: "closed", label: "Closed", color: "stage-closed" },
 ];
-
-export interface Contact {
-  id: string;
-  first_name: string;
-  last_name: string;
-  title: string;
-  company: string;
-  email: string;
-  email_status: string;
-  work_phone: string;
-  mobile_phone: string;
-  employees: number;
-  industry: string;
-  linkedin: string;
-  website: string;
-  city: string;
-  state: string;
-  country: string;
-  company_city: string;
-  annual_revenue: number;
-  pipeline_stage: PipelineStage;
-  tags: string[];
-  owner_id: string | null;
-  last_activity_at: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Note {
-  id: string;
-  contact_id: string;
-  author_id: string | null;
-  content: string;
-  created_at: string;
-}
-
-export interface Activity {
-  id: string;
-  contact_id: string;
-  actor_id: string | null;
-  type: "stage_change" | "note" | "call" | "email" | "meeting" | "created";
-  description: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
-export interface Profile {
-  id: string;
-  display_name: string | null;
-  avatar_url: string | null;
-}
-
-export type AppRole = "admin" | "user";
