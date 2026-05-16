@@ -1,65 +1,49 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StageBadge } from "@/components/StageBadge";
-import { Activity, Contact, Note, PIPELINE_STAGES, PipelineStage } from "@/lib/types";
+import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
-import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { EditContactDialog } from "@/components/EditContactDialog";
+import { useContact, useContactActivities, useContactNotes } from "@/lib/queries";
+import { useAddNote, useDeleteContact, useUpdateStage } from "@/lib/mutations";
+
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [contact, setContact] = useState<Contact | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [noteText, setNoteText] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [savingStage, setSavingStage] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  useEffect(() => { if (id) load(); /* eslint-disable-next-line */ }, [id]);
-  const load = async () => {
-    if (!id) return;
-    setLoading(true);
-    const [{ data: c }, { data: n }, { data: a }] = await Promise.all([
-      supabase.from("contacts").select("*").eq("id", id).maybeSingle(),
-      supabase.from("notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
-      supabase.from("activities").select("*").eq("contact_id", id).order("created_at", { ascending: false }).limit(20),
-    ]);
-    setContact(c as unknown as Contact | null);
-    setNotes((n ?? []) as unknown as Note[]);
-    setActivities((a ?? []) as unknown as Activity[]);
-    setLoading(false);
+
+  const { data: contact, isLoading } = useContact(id);
+  const { data: notes = [] } = useContactNotes(id);
+  const { data: activities = [] } = useContactActivities(id, 20);
+  const updateStage = useUpdateStage();
+  const addNote = useAddNote(id ?? "");
+  const deleteContact = useDeleteContact();
+
+  const onChangeStage = (stage: PipelineStage) => {
+    if (!contact || contact.pipeline_stage === stage) return;
+    updateStage.mutate({ id: contact.id, stage });
   };
-  const updateStage = async (stage: PipelineStage) => {
-    if (!contact) return;
-    setSavingStage(true);
-    const { error } = await supabase.from("contacts").update({ pipeline_stage: stage }).eq("id", contact.id);
-    setSavingStage(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Stage updated"); load();
-  };
-  const addNote = async () => {
-    if (!contact || !noteText.trim() || !user) return;
+  const onAddNote = () => {
+    if (!contact || !user) return;
     const trimmed = noteText.trim().slice(0, 2000);
-    const { error } = await supabase.from("notes").insert({ contact_id: contact.id, author_id: user.id, content: trimmed });
-    if (error) { toast.error(error.message); return; }
-    setNoteText(""); toast.success("Note added"); load();
+    if (!trimmed) return;
+    addNote.mutate({ content: trimmed, authorId: user.id }, { onSuccess: () => setNoteText("") });
   };
-  const deleteContact = async () => {
+  const onDelete = () => {
     if (!contact) return;
-    const { error } = await supabase.from("contacts").delete().eq("id", contact.id);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Contact deleted"); navigate("/contacts");
+    deleteContact.mutate(contact.id, { onSuccess: () => navigate("/contacts") });
   };
-  if (loading) return <AppLayout><div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div></AppLayout>;
+
+  if (isLoading) return <AppLayout><div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div></AppLayout>;
   if (!contact) return (
     <AppLayout>
       <div className="px-6 py-12 text-center">
@@ -68,6 +52,9 @@ export default function ContactDetail() {
       </div>
     </AppLayout>
   );
+
+  const canEdit = isAdmin || contact.created_by === user?.id || contact.owner_id === user?.id;
+
   return (
     <AppLayout>
       <div className="px-6 lg:px-10 py-8 max-w-5xl mx-auto">
@@ -78,7 +65,7 @@ export default function ContactDetail() {
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="flex items-start gap-4">
               <div className="h-16 w-16 rounded-full gradient-gold flex items-center justify-center text-ink text-xl font-bold">
-                {(contact.first_name[0] ?? "?").toUpperCase()}{(contact.last_name[0] ?? "").toUpperCase()}
+                {(contact.first_name?.[0] ?? "?").toUpperCase()}{(contact.last_name?.[0] ?? "").toUpperCase()}
               </div>
               <div>
                 <h1 className="text-2xl font-bold">{contact.first_name} {contact.last_name}</h1>
@@ -88,7 +75,7 @@ export default function ContactDetail() {
             </div>
             <div className="flex flex-col items-start md:items-end gap-2">
               <StageBadge stage={contact.pipeline_stage as PipelineStage} />
-              <Select value={contact.pipeline_stage} onValueChange={(v) => updateStage(v as PipelineStage)} disabled={savingStage}>
+              <Select value={contact.pipeline_stage} onValueChange={(v) => onChangeStage(v as PipelineStage)} disabled={updateStage.isPending}>
                 <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PIPELINE_STAGES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
@@ -106,43 +93,45 @@ export default function ContactDetail() {
               <Field icon={MapPin} label="Location" value={[contact.city, contact.state, contact.country].filter(Boolean).join(", ")} />
             )}
           </div>
-          {(isAdmin || contact.created_by === user?.id) && (
+          {canEdit && (
             <div className="mt-8 pt-6 border-t border-border">
               <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                <Pencil className="h-4 w-4 mr-1" /> Edit contact
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4 mr-1" /> Delete contact
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
-                    <AlertDialogDescription>This permanently removes the contact, notes, and activity. This cannot be undone.</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={deleteContact} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                  <Pencil className="h-4 w-4 mr-1" /> Edit contact
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                      <Trash2 className="h-4 w-4 mr-1" /> Delete contact
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
+                      <AlertDialogDescription>This permanently removes the contact, notes, and activity. This cannot be undone.</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={onDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           )}
         </div>
-        <EditContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} onSaved={load} />
+        <EditContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} onSaved={() => { /* react-query invalidates automatically */ }} />
         <div className="grid lg:grid-cols-2 gap-6 mt-6">
           <div className="bg-card border border-border rounded-xl p-6 shadow-elegant">
             <h3 className="font-bold mb-4">Notes</h3>
             <div className="space-y-2">
               <Textarea placeholder="Add a note about this contact…" value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} maxLength={2000} />
-              <Button size="sm" onClick={addNote} disabled={!noteText.trim()}><Send className="h-4 w-4 mr-1" /> Add note</Button>
+              <Button size="sm" onClick={onAddNote} disabled={!noteText.trim() || addNote.isPending}>
+                {addNote.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />} Add note
+              </Button>
             </div>
             <div className="mt-6 space-y-3">
-              {notes.length === 0 && <p className="text-sm text-muted-foreground">No notes yet.</p>}
+              {notes.length === 0 && <p className="text-sm text-muted-foreground">Add the first note to track what was said.</p>}
               {notes.map((n) => (
                 <div key={n.id} className="bg-secondary/40 rounded-lg p-3">
                   <p className="text-sm whitespace-pre-wrap">{n.content}</p>
@@ -172,7 +161,8 @@ export default function ContactDetail() {
     </AppLayout>
   );
 }
-function Field({ icon: Icon, label, value, href, external }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; href?: string; external?: boolean; }) {
+
+function Field({ icon: Icon, label, value, href, external }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; href?: string; external?: boolean }) {
   const inner = (
     <div className="flex items-start gap-2">
       <Icon className="h-4 w-4 text-gold-dark mt-0.5 shrink-0" />
