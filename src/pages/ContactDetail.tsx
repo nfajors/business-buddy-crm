@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil, Plus } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,9 +11,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { formatDistanceToNow } from "date-fns";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { EditContactDialog } from "@/components/EditContactDialog";
-import { useContact, useContactActivities, useContactNotes } from "@/lib/queries";
+import { useContact, useContactActivities, useContactNotes, useTasks } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAddNote, useDeleteContact, useUpdateStage } from "@/lib/mutations";
+import { NewTaskDialog } from "@/components/NewTaskDialog";
+import { TasksList } from "@/components/TasksList";
 
 export default function ContactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -21,11 +23,13 @@ export default function ContactDetail() {
   const { user, isAdmin } = useAuth();
   const [noteText, setNoteText] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const qc = useQueryClient();
 
   const { data: contact, isLoading } = useContact(id);
   const { data: notes = [] } = useContactNotes(id);
   const { data: activities = [] } = useContactActivities(id, 20);
+  const { data: tasks = [] } = useTasks({ contactId: id });
   const updateStage = useUpdateStage();
   const addNote = useAddNote(id ?? "");
   const deleteContact = useDeleteContact();
@@ -127,6 +131,15 @@ export default function ContactDetail() {
           qc.invalidateQueries({ queryKey: ["contacts"] });
         }} />
         <div className="grid lg:grid-cols-2 gap-6 mt-6">
+          <div className="bg-card border border-border rounded-xl p-6 shadow-elegant lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold">Tasks</h3>
+              <Button size="sm" variant="outline" onClick={() => setNewTaskOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" /> New task
+              </Button>
+            </div>
+            <TasksList tasks={tasks} />
+          </div>
           <div className="bg-card border border-border rounded-xl p-6 shadow-elegant">
             <h3 className="font-bold mb-4">Notes</h3>
             <div className="space-y-2">
@@ -163,6 +176,7 @@ export default function ContactDetail() {
           </div>
         </div>
       </div>
+      <NewTaskDialog open={newTaskOpen} onOpenChange={setNewTaskOpen} contactId={id} />
     </AppLayout>
   );
 }
