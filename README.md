@@ -1,7 +1,8 @@
 # business-buddy-crm
 
-Small-team CRM. React + Vite + Tailwind on the front end, Supabase today,
-ZeroDB after the migration described in epic [#1](../../issues/1).
+Small-team CRM for Winning.Careers. React + Vite + Tailwind on the front
+end, ZeroDB ([api.ainative.studio](https://api.ainative.studio/v1)) on the
+back end.
 
 ## Local development
 
@@ -37,12 +38,18 @@ The app deploys to Railway as a static SPA. Configuration lives in
 - The container listens on `$PORT`, set by Railway.
 
 Set the required `VITE_*` env vars in the Railway service settings for
-each environment (staging, production) — see [#12](../../issues/12).
-Vite inlines them at build time, so a value change requires a redeploy,
-not just a restart.
+each environment (staging, production). Vite inlines them at build time,
+so a value change requires a redeploy, not just a restart.
 
-## Migration: Supabase → ZeroDB
+## Architecture
 
-Tracking issue: [#1](../../issues/1). The ZeroDB client lives in
-`src/integrations/zerodb/` and ships alongside Supabase until [#9](../../issues/9)
-removes the legacy integration.
+The ZeroDB client lives in `src/integrations/zerodb/`. App-layer concerns
+that used to live in Postgres (RLS, triggers, timestamp stamping, full-text
+search, audit log) now live in:
+
+- `src/lib/audit.ts` — `recordActivity`, `buildSearchBlob`, timestamp stamping
+- `src/lib/auth-allowlist.ts` — client-side signup allowlist (was `handle_new_user`)
+- `src/lib/queries.ts` / `src/lib/mutations.ts` — all reads/writes
+
+The legacy Supabase schema is archived under
+`docs/legacy-supabase-schema/` for reference during cutover.
