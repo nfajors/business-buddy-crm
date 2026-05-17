@@ -148,6 +148,16 @@ class AuthAPI {
     this.client.setSession(null);
   }
 
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.client.request("/users/me/password", {
+      method: "PUT",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+  }
+
   // Token refresh: the public refresh endpoint is TBD on the ZeroDB side.
   // Until it's confirmed, this is a no-op stub so the 25-min timer doesn't
   // explode in the console. Wire up the real call here once #4 confirms the

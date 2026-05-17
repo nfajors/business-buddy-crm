@@ -12,7 +12,8 @@
     "start": "serve -s dist -l ${PORT:-4173}",
     "test": "vitest run",
     "test:watch": "vitest",
-    "zerodb:bootstrap": "node --env-file=.env --import tsx scripts/zerodb/bootstrap.ts"
+    "zerodb:bootstrap": "node --env-file=.env --import tsx scripts/zerodb/bootstrap.ts",
+    "zerodb:provision-users": "node --env-file=.env --import tsx scripts/zerodb/provision-users.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

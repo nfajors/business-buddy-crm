@@ -6,7 +6,7 @@ const RESET_ADMIN_EMAIL = "nf@winning.careers";
 const RESET_MAILTO = `mailto:${RESET_ADMIN_EMAIL}?subject=${encodeURIComponent(
   "CRM password reset request",
 )}&body=${encodeURIComponent(
-  "Hi Nick,\n\nPlease reset the CRM password for my account.\n\nThanks!",
+  "Hi Nick,\n\nPlease reset my CRM account password.\n\nThanks!",
 )}`;
 
 export default function ResetPassword() {
@@ -18,7 +18,7 @@ export default function ResetPassword() {
         </div>
         <h1 className="text-2xl font-bold">Password resets are admin-mediated</h1>
         <p className="text-sm text-muted-foreground mt-3">
-          The CRM uses a shared password managed by the Winning.Careers admin.
+          Password resets are handled by the Winning.Careers admin.
           Click below to email{" "}
           <a href={`mailto:${RESET_ADMIN_EMAIL}`} className="text-gold-dark font-semibold hover:underline">
             {RESET_ADMIN_EMAIL}
