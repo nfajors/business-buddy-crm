@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { csvToContacts, type CsvParseResult } from "@/lib/csv";
-import { useBulkImportContacts } from "@/lib/mutations";
+import { useBulkImportContacts, type BulkImportResult } from "@/lib/mutations";
 import { useAuth } from "@/hooks/useAuth";
 
 export function ImportContactsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -13,20 +13,27 @@ export function ImportContactsDialog({ open, onOpenChange }: { open: boolean; on
   const importer = useBulkImportContacts();
   const [preview, setPreview] = useState<CsvParseResult | null>(null);
   const [filename, setFilename] = useState<string>("");
+  const [lastResult, setLastResult] = useState<BulkImportResult | null>(null);
 
   const onFile = async (file: File) => {
     const text = await file.text();
     const parsed = csvToContacts(text, { created_by: user?.id, owner_id: user?.id });
     setPreview(parsed);
     setFilename(file.name);
+    setLastResult(null);
     if (parsed.rows.length === 0) toast.error("No valid rows found in this CSV.");
   };
 
-  const reset = () => { setPreview(null); setFilename(""); };
+  const reset = () => { setPreview(null); setFilename(""); setLastResult(null); };
 
   const submit = async () => {
     if (!preview || preview.rows.length === 0) return;
-    await importer.mutateAsync(preview.rows);
+    const result = await importer.mutateAsync(preview.rows);
+    if (result.failed > 0) {
+      // Keep the dialog open so the user can read the per-row error report.
+      setLastResult(result);
+      return;
+    }
     reset();
     onOpenChange(false);
   };
@@ -61,6 +68,31 @@ export function ImportContactsDialog({ open, onOpenChange }: { open: boolean; on
                     {preview.skipped.length > 20 && <li>…and {preview.skipped.length - 20} more</li>}
                   </ul>
                 </div>
+              )}
+            </div>
+          )}
+          {lastResult && lastResult.failed > 0 && (
+            <div className="text-sm space-y-2 border-t pt-3">
+              <div className="font-medium">
+                Last import: <span className="text-green-600">{lastResult.inserted} succeeded</span>,{" "}
+                <span className="text-destructive">{lastResult.failed} failed</span>
+              </div>
+              {lastResult.firstError && (
+                <div className="text-xs text-destructive break-all">
+                  First error: <code>{lastResult.firstError}</code>
+                </div>
+              )}
+              {lastResult.errors.length > 0 && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Show {lastResult.errors.length} per-row error{lastResult.errors.length === 1 ? "" : "s"}
+                  </summary>
+                  <ul className="list-disc ml-5 mt-1 max-h-40 overflow-auto break-all">
+                    {lastResult.errors.map((e) => (
+                      <li key={e.rowIndex}>Row {e.rowIndex}: {e.reason}</li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </div>
           )}

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { zerodb } from "@/integrations/zerodb/client";
+import { ZeroDBError } from "@/integrations/zerodb/client";
 import type {
   Contact,
   ContactInsert,
@@ -251,28 +252,82 @@ export function useUpdateContactTags(contactId: string) {
   });
 }
 
+export interface BulkImportResult {
+  inserted: number;
+  failed: number;
+  firstError: string | null;
+  // Per-row reasons, capped to keep the payload bounded for the UI.
+  errors: { rowIndex: number; reason: string }[];
+}
+
+// Concurrency cap for parallel single-row inserts. Tuned for ZeroDB latency:
+// high enough to push 3k rows in <2min, low enough to avoid rate-limit spikes.
+const IMPORT_CONCURRENCY = 8;
+const MAX_REPORTED_ERRORS = 50;
+
+function describeInsertError(err: unknown): string {
+  if (err instanceof ZeroDBError) {
+    const bodyText =
+      typeof err.body === "string"
+        ? err.body
+        : err.body
+          ? JSON.stringify(err.body)
+          : "";
+    const detail = bodyText.length > 200 ? `${bodyText.slice(0, 200)}…` : bodyText;
+    return detail ? `${err.status}: ${detail}` : `HTTP ${err.status}`;
+  }
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 export function useBulkImportContacts() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (rows: Partial<ContactInsert>[]) => {
-      if (rows.length === 0) return { inserted: 0, failed: 0 };
-      const CHUNK = 200;
+    mutationFn: async (rows: Partial<ContactInsert>[]): Promise<BulkImportResult> => {
+      if (rows.length === 0) return { inserted: 0, failed: 0, firstError: null, errors: [] };
+
+      // Per-row inserts with a concurrency cap. The /rows/bulk endpoint is not
+      // reliably available on ZeroDB; sequencing single inserts (which work
+      // for manual contact create) is the resilient path. ~8 in flight keeps
+      // total time reasonable for thousands of rows without hammering the API.
+      const stamped = rows.map(stampContactForInsert);
       let inserted = 0;
       let failed = 0;
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        const slice = rows.slice(i, i + CHUNK).map(stampContactForInsert);
-        try {
-          const result = await zerodb.tables.insertMany("contacts", slice);
-          inserted += result.length || slice.length;
-        } catch {
-          failed += slice.length;
+      let firstError: string | null = null;
+      const errors: BulkImportResult["errors"] = [];
+
+      let cursor = 0;
+      async function worker() {
+        while (cursor < stamped.length) {
+          const idx = cursor++;
+          try {
+            await zerodb.tables.insert("contacts", stamped[idx]);
+            inserted++;
+          } catch (err) {
+            failed++;
+            const reason = describeInsertError(err);
+            if (!firstError) firstError = reason;
+            if (errors.length < MAX_REPORTED_ERRORS) {
+              errors.push({ rowIndex: idx + 1, reason });
+            }
+          }
         }
       }
-      return { inserted, failed };
+
+      const workers = Array.from(
+        { length: Math.min(IMPORT_CONCURRENCY, stamped.length) },
+        () => worker(),
+      );
+      await Promise.all(workers);
+
+      return { inserted, failed, firstError, errors };
     },
-    onSuccess: ({ inserted, failed }) => {
+    onSuccess: ({ inserted, failed, firstError }) => {
       if (inserted) toast.success(`Imported ${inserted} contact${inserted === 1 ? "" : "s"}`);
-      if (failed) toast.error(`${failed} row${failed === 1 ? "" : "s"} failed (duplicates or invalid email)`);
+      if (failed) {
+        const suffix = firstError ? ` — first error: ${firstError}` : "";
+        toast.error(`${failed} row${failed === 1 ? "" : "s"} failed${suffix}`);
+      }
       invalidateContactLists(qc);
     },
     onError: (e: Error) => toast.error(e.message),
