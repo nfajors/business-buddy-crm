@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { zerodb, ZeroDBError } from "@/integrations/zerodb/client";
+import { zerodb } from "@/integrations/zerodb/client";
 import type { AuthSession } from "@/integrations/zerodb/types";
-import { isEmailAllowed } from "@/lib/auth-allowlist";
+import { isEmailAllowed, isAdminEmail } from "@/lib/auth-allowlist";
 import type { AppRole } from "@/lib/types";
 
 interface User {
@@ -24,6 +24,20 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const SIGN_IN_KEY = "zerodb.last_sign_in_at";
+const SESSION_KEY = "zerodb.session";
+
+// Internal CRM uses shared API key auth — no ZeroDB user accounts needed.
+// The allowlist is the gate; password is a shared secret set via env var.
+const API_KEY = import.meta.env.VITE_ZERODB_API_KEY ?? "";
+const CRM_PASSWORD = import.meta.env.VITE_CRM_PASSWORD ?? "";
+
+function mintSession(email: string): AuthSession {
+  return {
+    token: API_KEY,
+    user: { id: email, email },
+    expiresAt: Date.now() + 8 * 60 * 60 * 1000, // 8h
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(zerodb.getSession());
@@ -33,55 +47,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = zerodb.onAuthChange((next) => {
       setSession(next);
-      if (next?.user.id) void fetchRoles(next.user.id);
-      else setRoles([]);
+      setRoles(next ? rolesForEmail(next.user.email) : []);
     });
     const initial = zerodb.getSession();
-    if (initial?.user.id) void fetchRoles(initial.user.id);
+    if (initial) setRoles(rolesForEmail(initial.user.email));
     setLoading(false);
     return unsubscribe;
   }, []);
 
-  const fetchRoles = async (userId: string) => {
-    try {
-      const res = await zerodb.tables.query("user_roles", {
-        filter: { user_id: userId },
-        limit: 100,
-      });
-      setRoles(res.records.map((r) => r.role));
-    } catch (err) {
-      console.warn("[auth] role fetch failed", err);
-      setRoles([]);
-    }
-  };
-
   const signIn = async (email: string, password: string) => {
-    try {
-      await zerodb.auth.login(email.trim().toLowerCase(), password);
-      localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
-      return { error: null };
-    } catch (err) {
-      return { error: friendlyAuthError(err) };
-    }
-  };
-
-  const signUp = async (email: string, password: string, _displayName: string) => {
     const normalized = email.trim().toLowerCase();
     if (!isEmailAllowed(normalized)) {
-      return { error: "Signups are restricted to authorized Winning.Careers staff." };
+      return { error: "Access restricted to authorized Winning.Careers staff." };
     }
-    try {
-      await zerodb.auth.register(normalized, password);
-      localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
-      return { error: null };
-    } catch (err) {
-      return { error: friendlyAuthError(err) };
+    if (!CRM_PASSWORD || password !== CRM_PASSWORD) {
+      return { error: "Invalid email or password." };
     }
+    const session = mintSession(normalized);
+    zerodb.setSession(session);
+    localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
+    return { error: null };
+  };
+
+  // Sign-up is intentionally disabled — accounts are admin-provisioned.
+  const signUp = async (_email: string, _password: string, _displayName: string) => {
+    return { error: "Accounts are provisioned by an admin. Contact the team if you need access." };
   };
 
   const signOut = async () => {
-    zerodb.auth.logout();
+    zerodb.setSession(null);
     localStorage.removeItem(SIGN_IN_KEY);
+    localStorage.removeItem(SESSION_KEY);
   };
 
   const lastSignInAt = typeof localStorage !== "undefined" ? localStorage.getItem(SIGN_IN_KEY) ?? undefined : undefined;
@@ -107,18 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function friendlyAuthError(err: unknown): string {
-  if (err instanceof ZeroDBError) {
-    if (err.status === 401 || err.status === 403) return "Invalid email or password.";
-    const body = err.body as { message?: string; detail?: string } | null;
-    return body?.message ?? body?.detail ?? err.message;
-  }
-  const msg = (err as Error).message || "";
-  // Network-level failure (CORS blocked response, no connectivity, etc.)
-  if (!msg || msg === "Failed to fetch" || msg === "Load failed" || msg === "NetworkError") {
-    return "Invalid email or password.";
-  }
-  return msg || "Authentication failed.";
+function rolesForEmail(email: string): AppRole[] {
+  const roles: AppRole[] = ["user"];
+  if (isAdminEmail(email)) roles.push("admin");
+  return roles;
 }
 
 export function useAuth() {
