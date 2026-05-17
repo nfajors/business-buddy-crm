@@ -480,7 +480,7 @@ const users = await client.queryTable({
 
 - **Slack**: `#zerodb-support`
 - **Docs**: https://docs.ainative.studio
-- **Platform**: https://zerodb.ainative.studio/
+- **Platform**: https://ainative.studio
 - **Full Guide**: `.claude/commands/ZERODB-GUIDE.md`
 
 ### Escalation Path
