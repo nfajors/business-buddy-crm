@@ -93,10 +93,16 @@ class ZeroDBClient {
   async request<T>(path: string, init: RequestInit & { skipAuth?: boolean; tableApi?: boolean } = {}): Promise<T> {
     const headers = new Headers(init.headers);
     if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+    // Per .ainative/CODY.md: auth model is API key only. The previous
+    // Authorization: Bearer header was a leftover from the original
+    // JWT-based ZeroDB auth path; useAuth.tsx now mints a session whose
+    // `token` IS the API key, so sending it as a Bearer was sending the
+    // raw API key in a slot the server expects to hold a JWT. That
+    // malformed header caused the API's preflight/auth layer to reject
+    // requests, surfacing as the opaque "Failed to fetch" on bulk imports.
+    // See issue #18. `skipAuth` is kept as a parameter for the dead
+    // AuthAPI endpoints; it has no effect now and can be cleaned up later.
     if (API_KEY) headers.set("X-API-Key", API_KEY);
-    if (!init.skipAuth && this.session?.token) {
-      headers.set("Authorization", `Bearer ${this.session.token}`);
-    }
 
     const base = init.tableApi ? TABLE_API_URL : API_URL;
     let res: Response;
