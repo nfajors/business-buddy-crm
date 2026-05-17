@@ -479,7 +479,7 @@ const users = await client.queryTable({
 ### Internal Resources
 
 - **Slack**: `#zerodb-support`
-- **Docs**: https://api.ainative.studio/docs
+- **Docs**: https://docs.ainative.studio
 - **Platform**: https://zerodb.ainative.studio/
 - **Full Guide**: `.claude/commands/ZERODB-GUIDE.md`
 
