@@ -1,67 +1,26 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Link } from "react-router-dom";
 import { Brand } from "@/components/Brand";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
+// Stub page. The Supabase recovery-link flow doesn't exist on ZeroDB yet
+// (#4 follow-up). Until the public reset endpoint ships, resets are
+// admin-mediated — kept as a route so old recovery emails still resolve.
 export default function ResetPassword() {
-  const navigate = useNavigate();
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    // Supabase puts recovery tokens in the URL hash; detectSessionInUrl handles it.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") setReady(true);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = passwordSchema.safeParse(password);
-    if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
-    if (password !== confirm) { toast.error("Passwords do not match"); return; }
-    setSubmitting(true);
-    const { error } = await supabase.auth.updateUser({ password: parsed.data });
-    setSubmitting(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Password updated. You're signed in.");
-    navigate("/dashboard", { replace: true });
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <Brand className="h-9 mb-6" />
-        <h1 className="text-2xl font-bold">Set a new password</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {ready ? PASSWORD_HINT : "Validating reset link…"}
+      <div className="w-full max-w-sm text-center">
+        <div className="flex justify-center mb-6">
+          <Brand className="h-9" />
+        </div>
+        <h1 className="text-2xl font-bold">Password resets are admin-mediated</h1>
+        <p className="text-sm text-muted-foreground mt-3">
+          Self-serve password reset is temporarily unavailable while we migrate
+          the backend. Contact a Winning.Careers admin and they'll reset it for
+          you.
         </p>
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="password">New password</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="confirm">Confirm password</Label>
-            <Input id="confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" />
-          </div>
-          <Button type="submit" className="w-full shadow-gold" disabled={submitting || !ready}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Update password
-          </Button>
-        </form>
+        <Button asChild className="mt-6 w-full shadow-gold">
+          <Link to="/auth">Back to sign in</Link>
+        </Button>
       </div>
     </div>
   );

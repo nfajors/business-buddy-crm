@@ -1,22 +1,24 @@
-import { supabase } from "@/integrations/supabase/client";
+import { zerodb } from "@/integrations/zerodb/client";
+import type { Contact } from "@/integrations/zerodb/types";
 
-// Fetch all rows from a table, paginating past Supabase's 1000-row cap.
-// NOTE: pages should migrate to server-side filters + pagination (Block 2).
-export async function fetchAllContacts<T = unknown>(orderCol = "created_at"): Promise<T[]> {
+// Paginated full-table fetch. Currently unused but kept as the canonical
+// pagination pattern for one-off scripts that need every row (CSV export,
+// backfills, etc.). Migrated to ZeroDB in #8.
+export async function fetchAllContacts(
+  orderCol: "created_at" | "updated_at" | "first_name" | "company" = "created_at",
+): Promise<Contact[]> {
   const PAGE = 1000;
-  let from = 0;
-  const all: T[] = [];
-  // eslint-disable-next-line no-constant-condition
+  const all: Contact[] = [];
+  let offset = 0;
   while (true) {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("*")
-      .order(orderCol, { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error || !data) break;
-    all.push(...(data as unknown as T[]));
-    if (data.length < PAGE) break;
-    from += PAGE;
+    const res = await zerodb.tables.query("contacts", {
+      sort: [{ field: orderCol, direction: "desc" }],
+      limit: PAGE,
+      offset,
+    });
+    all.push(...res.records);
+    if (res.records.length < PAGE) break;
+    offset += PAGE;
   }
   return all;
 }

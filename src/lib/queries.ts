@@ -1,6 +1,13 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import type { Activity, Contact, Note, PipelineStage, Task, TaskStatus } from "@/lib/types";
+import { zerodb, ZeroDBError } from "@/integrations/zerodb/client";
+import type {
+  Activity,
+  Contact,
+  Note,
+  PipelineStage,
+  Task,
+  TaskStatus,
+} from "@/integrations/zerodb/types";
 import { PIPELINE_STAGES } from "@/lib/types";
 
 // ---------- Dashboard ----------
@@ -14,26 +21,19 @@ export function useDashboardStats() {
   return useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async (): Promise<DashboardStats> => {
-      const { data, error } = await supabase.rpc("get_dashboard_stats");
-      if (error) throw error;
-      const row = data?.[0] ?? {
-        total: 0,
-        new_count: 0,
-        contacted_count: 0,
-        responded_count: 0,
-        meeting_count: 0,
-        closed_count: 0,
-      };
-      return {
-        total: Number(row.total),
-        byStage: {
-          new: Number(row.new_count),
-          contacted: Number(row.contacted_count),
-          responded: Number(row.responded_count),
-          meeting: Number(row.meeting_count),
-          closed: Number(row.closed_count),
-        },
-      };
+      // Replaces the Supabase `get_dashboard_stats` RPC. Tables API has no
+      // RPC, so we fan out 5 counts and aggregate.
+      const stages: PipelineStage[] = PIPELINE_STAGES.map((s) => s.value);
+      const counts = await Promise.all(
+        stages.map((stage) => zerodb.tables.count("contacts", { pipeline_stage: stage })),
+      );
+      const byStage = {} as Record<PipelineStage, number>;
+      let total = 0;
+      stages.forEach((stage, i) => {
+        byStage[stage] = counts[i];
+        total += counts[i];
+      });
+      return { total, byStage };
     },
     staleTime: 30_000,
   });
@@ -43,19 +43,17 @@ export function useRecentActivities(limit = 8) {
   return useQuery({
     queryKey: ["activities", "recent", limit],
     queryFn: async (): Promise<Activity[]> => {
-      const { data, error } = await supabase
-        .from("activities")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return data ?? [];
+      const res = await zerodb.tables.query("activities", {
+        sort: [{ field: "created_at", direction: "desc" }],
+        limit,
+      });
+      return res.records;
     },
     staleTime: 30_000,
   });
 }
 
-// ---------- Contacts list (server-side search + pagination) ----------
+// ---------- Contacts list (server-side filter + pagination, client-side LIKE on search_blob) ----------
 
 export type ContactSort = "created_at" | "updated_at" | "first_name" | "company";
 
@@ -65,7 +63,7 @@ export type ContactsQueryArgs = {
   industry?: string | "all";
   sort?: ContactSort;
   ascending?: boolean;
-  page?: number; // 0-based
+  page?: number;
   pageSize?: number;
 };
 
@@ -89,33 +87,21 @@ export function useContacts(args: ContactsQueryArgs) {
     queryKey: ["contacts", "list", { search, stage, industry, sort, ascending, page, pageSize }],
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<ContactsPage> => {
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
-      let q = supabase
-        .from("contacts")
-        .select("*", { count: "exact" })
-        .order(sort, { ascending });
+      const filter: Record<string, unknown> = {};
+      if (stage !== "all") filter.pipeline_stage = stage;
+      if (industry !== "all") filter.industry = industry;
 
-      if (stage !== "all") q = q.eq("pipeline_stage", stage);
-      if (industry !== "all") q = q.eq("industry", industry);
-
-      const s = search.trim();
-      if (s) {
-        // Prefer full-text on the indexed tsvector. For single-token searches
-        // append :* for prefix matches ("ali" → matches "Alice"). For multi-
-        // token searches let websearch_to_tsquery handle quoting + boolean.
-        const tokens = s.split(/\s+/).filter(Boolean);
-        if (tokens.length === 1 && !/[:&|!()"']/.test(tokens[0])) {
-          // Prefix match on a single token via raw tsquery operator.
-          q = q.filter("search_tsv", "fts", `${tokens[0]}:*`);
-        } else {
-          q = q.textSearch("search_tsv", s, { type: "websearch" });
-        }
-      }
-
-      const { data, error, count } = await q.range(from, to);
-      if (error) throw error;
-      return { rows: data ?? [], total: count ?? 0 };
+      const s = search.trim().toLowerCase();
+      const res = await zerodb.tables.query("contacts", {
+        filter,
+        // search_blob is the denormalized lowercase concat replacement for
+        // Supabase FTS — see scripts/zerodb/bootstrap.ts and audit.ts.
+        search: s ? { field: "search_blob", value: s } : undefined,
+        sort: [{ field: sort, direction: ascending ? "asc" : "desc" }],
+        limit: pageSize,
+        offset: page * pageSize,
+      });
+      return { rows: res.records, total: res.total };
     },
     staleTime: 15_000,
   });
@@ -125,14 +111,10 @@ export function useIndustries() {
   return useQuery({
     queryKey: ["contacts", "industries"],
     queryFn: async (): Promise<string[]> => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("industry")
-        .not("industry", "is", null)
-        .limit(1000);
-      if (error) throw error;
+      // No DISTINCT in the Tables API; pull up to 1000 and dedupe.
+      const res = await zerodb.tables.query("contacts", { limit: 1000 });
       return Array.from(
-        new Set((data ?? []).map((r) => r.industry).filter((v): v is string => !!v)),
+        new Set(res.records.map((r) => r.industry).filter((v): v is string => !!v)),
       ).sort();
     },
     staleTime: 5 * 60_000,
@@ -155,17 +137,16 @@ export function usePipeline() {
       const stages = PIPELINE_STAGES.map((s) => s.value);
       const results = await Promise.all(
         stages.map((stage) =>
-          supabase
-            .from("contacts")
-            .select("id, first_name, last_name, title, company, pipeline_stage, updated_at")
-            .eq("pipeline_stage", stage)
-            .order("updated_at", { ascending: false })
-            .limit(PIPELINE_CAP),
+          zerodb.tables.query("contacts", {
+            filter: { pipeline_stage: stage },
+            sort: [{ field: "updated_at", direction: "desc" }],
+            limit: PIPELINE_CAP,
+          }),
         ),
       );
       const map = {} as Record<PipelineStage, PipelineCard[]>;
       stages.forEach((stage, i) => {
-        map[stage] = (results[i].data ?? []) as PipelineCard[];
+        map[stage] = results[i].records as PipelineCard[];
       });
       return map;
     },
@@ -182,13 +163,12 @@ export function useContact(id: string | undefined) {
     queryKey: ["contact", id],
     enabled: !!id,
     queryFn: async (): Promise<Contact | null> => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("id", id!)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
+      try {
+        return await zerodb.tables.get("contacts", id!);
+      } catch (err) {
+        if (err instanceof ZeroDBError && err.status === 404) return null;
+        throw err;
+      }
     },
   });
 }
@@ -198,13 +178,12 @@ export function useContactNotes(contactId: string | undefined) {
     queryKey: ["notes", contactId],
     enabled: !!contactId,
     queryFn: async (): Promise<Note[]> => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("*")
-        .eq("contact_id", contactId!)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
+      const res = await zerodb.tables.query("notes", {
+        filter: { contact_id: contactId! },
+        sort: [{ field: "created_at", direction: "desc" }],
+        limit: 500,
+      });
+      return res.records;
     },
   });
 }
@@ -214,14 +193,12 @@ export function useContactActivities(contactId: string | undefined, limit = 20) 
     queryKey: ["activities", contactId, limit],
     enabled: !!contactId,
     queryFn: async (): Promise<Activity[]> => {
-      const { data, error } = await supabase
-        .from("activities")
-        .select("*")
-        .eq("contact_id", contactId!)
-        .order("created_at", { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return data ?? [];
+      const res = await zerodb.tables.query("activities", {
+        filter: { contact_id: contactId! },
+        sort: [{ field: "created_at", direction: "desc" }],
+        limit,
+      });
+      return res.records;
     },
   });
 }
@@ -240,15 +217,21 @@ export function useTasks(args: TasksQueryArgs = {}) {
   return useQuery({
     queryKey: ["tasks", { contactId: contactId ?? null, status, assignee, currentUserId: currentUserId ?? null }],
     queryFn: async (): Promise<Task[]> => {
-      let q = supabase.from("tasks").select("*");
-      if (contactId) q = q.eq("contact_id", contactId);
-      if (status !== "all") q = q.eq("status", status);
-      if (assignee === "me" && currentUserId) q = q.eq("assignee_id", currentUserId);
-      else if (assignee !== "all" && assignee !== "me") q = q.eq("assignee_id", assignee);
-      q = q.order("status", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
-      const { data, error } = await q.limit(500);
-      if (error) throw error;
-      return data ?? [];
+      const filter: Record<string, unknown> = {};
+      if (contactId) filter.contact_id = contactId;
+      if (status !== "all") filter.status = status;
+      if (assignee === "me" && currentUserId) filter.assignee_id = currentUserId;
+      else if (assignee !== "all" && assignee !== "me") filter.assignee_id = assignee;
+      const res = await zerodb.tables.query("tasks", {
+        filter,
+        sort: [
+          { field: "status", direction: "asc" },
+          { field: "due_at", direction: "asc" },
+          { field: "created_at", direction: "desc" },
+        ],
+        limit: 500,
+      });
+      return res.records;
     },
     staleTime: 15_000,
   });

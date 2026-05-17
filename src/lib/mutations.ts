@@ -1,7 +1,26 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { ContactInsert, ContactUpdate, PipelineStage, TaskInsert, TaskStatus, TaskUpdate } from "@/lib/types";
+import { zerodb } from "@/integrations/zerodb/client";
+import type {
+  Contact,
+  ContactInsert,
+  ContactUpdate,
+  PipelineStage,
+  TaskInsert,
+  TaskStatus,
+  TaskUpdate,
+} from "@/integrations/zerodb/types";
+import {
+  buildSearchBlob,
+  currentUserId,
+  nowIso,
+  recordActivity,
+  stageChangeDescription,
+  stampContactForInsert,
+  stampContactForUpdate,
+  stampForInsert,
+  stampForUpdate,
+} from "@/lib/audit";
 
 function invalidateContactLists(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["contacts", "list"] });
@@ -12,9 +31,15 @@ function invalidateContactLists(qc: ReturnType<typeof useQueryClient>) {
 export function useCreateContact() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: ContactInsert) => {
-      const { data, error } = await supabase.from("contacts").insert(input).select().single();
-      if (error) throw error;
+    mutationFn: async (input: Partial<ContactInsert>) => {
+      const data = await zerodb.tables.insert("contacts", stampContactForInsert(input));
+      if (data.id) {
+        await recordActivity({
+          contact_id: data.id,
+          type: "created",
+          description: "Contact created",
+        });
+      }
       return data;
     },
     onSuccess: () => {
@@ -29,14 +54,8 @@ export function useUpdateContact(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (patch: ContactUpdate) => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .update(patch)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      const existing = qc.getQueryData<Contact | null>(["contact", id]) ?? null;
+      return zerodb.tables.update("contacts", id, stampContactForUpdate(patch, existing));
     },
     onSuccess: () => {
       toast.success("Contact updated");
@@ -51,8 +70,7 @@ export function useDeleteContact() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("contacts").delete().eq("id", id);
-      if (error) throw error;
+      await zerodb.tables.remove("contacts", id);
       return id;
     },
     onSuccess: () => {
@@ -68,11 +86,13 @@ export function useUpdateStage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: PipelineStage }) => {
-      const { error } = await supabase
-        .from("contacts")
-        .update({ pipeline_stage: stage })
-        .eq("id", id);
-      if (error) throw error;
+      await zerodb.tables.update("contacts", id, stampForUpdate({ pipeline_stage: stage }));
+      await recordActivity({
+        contact_id: id,
+        type: "stage_change",
+        description: stageChangeDescription(stage),
+        metadata: { to: stage },
+      });
       return { id, stage };
     },
     onMutate: async ({ id, stage }) => {
@@ -96,7 +116,6 @@ export function useUpdateStage() {
           return next;
         },
       );
-      // Update detail cache too if it's loaded.
       const prevContact = qc.getQueryData<Record<string, unknown>>(["contact", id]);
       if (prevContact) {
         qc.setQueryData(["contact", id], { ...prevContact, pipeline_stage: stage });
@@ -120,12 +139,17 @@ export function useAddNote(contactId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ content, authorId }: { content: string; authorId: string }) => {
-      const { data, error } = await supabase
-        .from("notes")
-        .insert({ contact_id: contactId, author_id: authorId, content })
-        .select()
-        .single();
-      if (error) throw error;
+      const data = await zerodb.tables.insert("notes", {
+        contact_id: contactId,
+        author_id: authorId,
+        content,
+        created_at: nowIso(),
+      });
+      await recordActivity({
+        contact_id: contactId,
+        type: "note",
+        description: content.slice(0, 200),
+      });
       return data;
     },
     onSuccess: () => {
@@ -145,12 +169,11 @@ export function useBulkUpdateContacts() {
   return useMutation({
     mutationFn: async ({ ids, patch }: { ids: string[]; patch: ContactUpdate }) => {
       if (ids.length === 0) return 0;
-      const { error, count } = await supabase
-        .from("contacts")
-        .update(patch, { count: "exact" })
-        .in("id", ids);
-      if (error) throw error;
-      return count ?? ids.length;
+      const stamped = stampForUpdate(patch);
+      // No bulk-update endpoint on the Tables API; fan out N requests.
+      // Acceptable for small selections (UI caps at one page = 50).
+      await Promise.all(ids.map((id) => zerodb.tables.update("contacts", id, stamped)));
+      return ids.length;
     },
     onSuccess: (count) => {
       toast.success(`Updated ${count} contact${count === 1 ? "" : "s"}`);
@@ -165,12 +188,8 @@ export function useBulkDeleteContacts() {
   return useMutation({
     mutationFn: async (ids: string[]) => {
       if (ids.length === 0) return 0;
-      const { error, count } = await supabase
-        .from("contacts")
-        .delete({ count: "exact" })
-        .in("id", ids);
-      if (error) throw error;
-      return count ?? ids.length;
+      await Promise.all(ids.map((id) => zerodb.tables.remove("contacts", id)));
+      return ids.length;
     },
     onSuccess: (count) => {
       toast.success(`Deleted ${count} contact${count === 1 ? "" : "s"}`);
@@ -186,13 +205,16 @@ export function useBulkAddTag() {
     mutationFn: async ({ ids, tag }: { ids: string[]; tag: string }) => {
       const cleaned = tag.trim();
       if (!cleaned || ids.length === 0) return 0;
-      // Fetch existing tags then merge — small N expected from selection.
-      const { data, error } = await supabase.from("contacts").select("id, tags").in("id", ids);
-      if (error) throw error;
+      // Read-modify-write per row to merge tags without dropping existing ones.
+      const rows = await Promise.all(ids.map((id) => zerodb.tables.get("contacts", id)));
       await Promise.all(
-        (data ?? []).map((row) => {
+        rows.map((row) => {
           const next = Array.from(new Set([...(row.tags ?? []), cleaned]));
-          return supabase.from("contacts").update({ tags: next }).eq("id", row.id);
+          return zerodb.tables.update(
+            "contacts",
+            row.id,
+            stampContactForUpdate({ tags: next }, row),
+          );
         }),
       );
       return ids.length;
@@ -214,14 +236,12 @@ export function useUpdateContactTags(contactId: string) {
       const cleaned = Array.from(
         new Set(tags.map((t) => t.trim()).filter(Boolean)),
       ).slice(0, 30);
-      const { data, error } = await supabase
-        .from("contacts")
-        .update({ tags: cleaned })
-        .eq("id", contactId)
-        .select("id, tags")
-        .single();
-      if (error) throw error;
-      return data;
+      const existing = qc.getQueryData<Contact | null>(["contact", contactId]) ?? null;
+      return zerodb.tables.update(
+        "contacts",
+        contactId,
+        stampContactForUpdate({ tags: cleaned }, existing),
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contact", contactId] });
@@ -234,19 +254,18 @@ export function useUpdateContactTags(contactId: string) {
 export function useBulkImportContacts() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (rows: ContactInsert[]) => {
+    mutationFn: async (rows: Partial<ContactInsert>[]) => {
       if (rows.length === 0) return { inserted: 0, failed: 0 };
-      // Chunk to keep payloads small + isolate row-level errors.
       const CHUNK = 200;
       let inserted = 0;
       let failed = 0;
       for (let i = 0; i < rows.length; i += CHUNK) {
-        const slice = rows.slice(i, i + CHUNK);
-        const { error, count } = await supabase.from("contacts").insert(slice, { count: "exact" });
-        if (error) {
+        const slice = rows.slice(i, i + CHUNK).map(stampContactForInsert);
+        try {
+          const result = await zerodb.tables.insertMany("contacts", slice);
+          inserted += result.length || slice.length;
+        } catch {
           failed += slice.length;
-        } else {
-          inserted += count ?? slice.length;
         }
       }
       return { inserted, failed };
@@ -272,8 +291,16 @@ export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: TaskInsert) => {
-      const { data, error } = await supabase.from("tasks").insert(input).select().single();
-      if (error) throw error;
+      const stamped = stampForInsert({ ...input, created_by: input.created_by ?? currentUserId() });
+      const data = await zerodb.tables.insert("tasks", stamped);
+      if (data.contact_id && data.id) {
+        await recordActivity({
+          contact_id: data.contact_id,
+          type: "task_created",
+          description: `Task created: ${data.title}`,
+          metadata: { task_id: data.id, due_at: data.due_at },
+        });
+      }
       return data;
     },
     onSuccess: (data) => {
@@ -288,9 +315,7 @@ export function useUpdateTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: TaskUpdate }) => {
-      const { data, error } = await supabase.from("tasks").update(patch).eq("id", id).select().single();
-      if (error) throw error;
-      return data;
+      return zerodb.tables.update("tasks", id, stampForUpdate(patch));
     },
     onSuccess: (data) => {
       invalidateTasks(qc, data?.contact_id ?? null);
@@ -305,11 +330,18 @@ export function useToggleTaskStatus() {
     mutationFn: async ({ id, status, userId }: { id: string; status: TaskStatus; userId?: string }) => {
       const patch: TaskUpdate = {
         status,
-        completed_at: status === "done" ? new Date().toISOString() : null,
-        completed_by: status === "done" ? userId ?? null : null,
+        completed_at: status === "done" ? nowIso() : null,
+        completed_by: status === "done" ? userId ?? currentUserId() : null,
       };
-      const { data, error } = await supabase.from("tasks").update(patch).eq("id", id).select().single();
-      if (error) throw error;
+      const data = await zerodb.tables.update("tasks", id, stampForUpdate(patch));
+      if (status === "done" && data.contact_id) {
+        await recordActivity({
+          contact_id: data.contact_id,
+          type: "task_completed",
+          description: `Task completed: ${data.title}`,
+          metadata: { task_id: data.id },
+        });
+      }
       return data;
     },
     onSuccess: (data) => {
@@ -323,8 +355,7 @@ export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id }: { id: string; contactId?: string | null }) => {
-      const { error } = await supabase.from("tasks").delete().eq("id", id);
-      if (error) throw error;
+      await zerodb.tables.remove("tasks", id);
     },
     onSuccess: (_d, vars) => {
       toast.success("Task deleted");
@@ -333,3 +364,6 @@ export function useDeleteTask() {
     onError: (e: Error) => toast.error(e.message),
   });
 }
+
+// Re-export for back-compat with callers expecting the old buildSearchBlob.
+export { buildSearchBlob };
