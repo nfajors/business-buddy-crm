@@ -189,31 +189,59 @@ class TablesAPI {
     table: T,
     options: QueryOptions = {},
   ): Promise<QueryResult<TableSchemas[T]["Row"]>> {
-    return this.client.request(`${this.base(table)}/rows/query`, {
-      method: "POST",
-      body: JSON.stringify(options),
-      tableApi: true,
-    });
+    // ZeroDB Tables API uses GET /rows (no POST /rows/query endpoint).
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.offset !== undefined) params.set("skip", String(options.offset));
+    // Filter: pass as JSON string
+    if (options.filter && Object.keys(options.filter).length > 0) {
+      params.set("filter", JSON.stringify(options.filter));
+    }
+    // Sort: pass first sort field
+    if (options.sort?.[0]) {
+      params.set("sort_by", options.sort[0].field);
+      params.set("sort_order", options.sort[0].direction ?? "asc");
+    }
+    // Search: pass as search_value against search_field
+    if (options.search) {
+      params.set("search_field", options.search.field);
+      params.set("search_value", options.search.value);
+    }
+    const qs = params.toString();
+    const raw = await this.client.request<{
+      total: number; skip: number; limit: number; has_more: boolean;
+      data: { row_data: TableSchemas[T]["Row"]; row_id: string }[];
+    }>(`${this.base(table)}/rows${qs ? `?${qs}` : ""}`, { tableApi: true });
+    // Unwrap row_data envelope; merge row_id as `id` if not already present.
+    const records = (raw.data ?? []).map((r) => ({
+      id: r.row_id,
+      ...r.row_data,
+    })) as TableSchemas[T]["Row"][];
+    return { records, total: raw.total };
   }
 
   async get<T extends TableName>(
     table: T,
     id: string,
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
-      tableApi: true,
-    });
+    const raw = await this.client.request<{
+      row_data: TableSchemas[T]["Row"]; row_id: string;
+    }>(`${this.base(table)}/rows/${encodeURIComponent(id)}`, { tableApi: true });
+    return { id: raw.row_id, ...raw.row_data };
   }
 
   async insert<T extends TableName>(
     table: T,
     record: TableSchemas[T]["Insert"],
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/rows`, {
+    const raw = await this.client.request<{
+      row_data: TableSchemas[T]["Row"]; row_id: string;
+    }>(`${this.base(table)}/rows`, {
       method: "POST",
       body: JSON.stringify({ row_data: record }),
       tableApi: true,
     });
+    return { id: raw.row_id, ...raw.row_data };
   }
 
   async insertMany<T extends TableName>(
@@ -232,11 +260,14 @@ class TablesAPI {
     id: string,
     patch: TableSchemas[T]["Update"],
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
+    const raw = await this.client.request<{
+      row_data: TableSchemas[T]["Row"]; row_id: string;
+    }>(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
       method: "PUT",
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ row_data: patch }),
       tableApi: true,
     });
+    return { id: raw.row_id, ...raw.row_data };
   }
 
   async remove<T extends TableName>(table: T, id: string): Promise<void> {
