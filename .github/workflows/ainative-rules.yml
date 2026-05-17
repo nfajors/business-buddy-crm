@@ -1,0 +1,103 @@
+name: AINative Rules Enforcement
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  file-placement:
+    name: File Placement Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check file placement rules
+        run: |
+          echo "🔍 Checking file placement rules..."
+          ERRORS=0
+
+          # Get changed files vs base branch (PR) or last commit (push)
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          else
+            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git show --name-only --pretty=format: HEAD)
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+          echo ""
+
+          for FILE in $CHANGED; do
+            # Rule 1: No .md in repo root except README.md and CLAUDE.md
+            if echo "$FILE" | grep -qE "^[^/]+\.md$"; then
+              BASENAME=$(basename "$FILE")
+              if [[ "$BASENAME" != "README.md" && "$BASENAME" != "CLAUDE.md" ]]; then
+                echo "❌ FORBIDDEN: Root-level .md file: $FILE"
+                echo "   → Move to docs/{category}/$BASENAME"
+                ERRORS=$((ERRORS + 1))
+              fi
+            fi
+
+            # Rule 2: No .sh in repo root
+            if echo "$FILE" | grep -qE "^[^/]+\.sh$"; then
+              echo "❌ FORBIDDEN: Root-level .sh file: $FILE"
+              echo "   → Move to scripts/$(basename "$FILE")"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "❌ $ERRORS file placement violation(s). See .ainative/CRITICAL_FILE_PLACEMENT_RULES.md"
+            exit 1
+          fi
+
+          echo "✅ File placement: PASS"
+
+  ai-attribution:
+    name: AI Attribution Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages for AI attribution
+        run: |
+          echo "🔍 Checking commit messages for AI attribution..."
+          ERRORS=0
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git log origin/${{ github.base_ref }}..HEAD --format="%H %s %b")
+          else
+            COMMITS=$(git log -1 --format="%H %s %b")
+          fi
+
+          # Check each commit message
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="origin/${{ github.base_ref }}..HEAD"
+          else
+            RANGE="HEAD~1..HEAD"
+          fi
+
+          while IFS= read -r SHA; do
+            MSG=$(git log -1 --format="%s%n%b" "$SHA")
+            if echo "$MSG" | grep -qiE "(anthropic|chatgpt|openai.*generated|copilot.*generated|co-authored-by:.*claude|co-authored-by:.*chatgpt|co-authored-by:.*copilot|generated with chatgpt|noreply@anthropic\.com)"; then
+              echo "❌ Forbidden AI attribution in commit $SHA:"
+              echo "$MSG" | grep -iE "(anthropic|chatgpt|openai.*generated|copilot.*generated|co-authored-by:.*claude|co-authored-by:.*chatgpt|noreply@anthropic\.com)" || true
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < <(git log $RANGE --format="%H" 2>/dev/null || git log -1 --format="%H")
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "❌ $ERRORS commit(s) contain forbidden AI attribution."
+            echo "✅ Use: 'Built by AINative Dev Team' or 'All Data Services Built on ZeroDB'"
+            exit 1
+          fi
+
+          echo "✅ AI attribution: PASS"
