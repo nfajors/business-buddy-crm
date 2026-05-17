@@ -2,20 +2,27 @@ import type { Contact, ContactInsert } from "@/lib/types";
 
 // Minimal CSV helpers (no external dep, item 7).
 
+// Column labels mirror the importer's HEADER_MAP so a contact can survive
+// an export → re-import round-trip without losing enrichment fields.
 const CONTACT_EXPORT_COLUMNS: { key: keyof Contact; label: string }[] = [
   { key: "first_name", label: "First Name" },
   { key: "last_name", label: "Last Name" },
   { key: "title", label: "Title" },
   { key: "company", label: "Company" },
   { key: "email", label: "Email" },
+  { key: "email_status", label: "Email Status" },
   { key: "work_phone", label: "Work Phone" },
   { key: "mobile_phone", label: "Mobile Phone" },
   { key: "linkedin", label: "LinkedIn" },
   { key: "website", label: "Website" },
   { key: "industry", label: "Industry" },
+  { key: "employees", label: "# Employees" },
+  { key: "annual_revenue", label: "Annual Revenue" },
   { key: "city", label: "City" },
   { key: "state", label: "State" },
   { key: "country", label: "Country" },
+  { key: "company_city", label: "Company City" },
+  { key: "tags", label: "Tags" },
   { key: "pipeline_stage", label: "Stage" },
 ];
 
@@ -32,7 +39,8 @@ export function contactsToCsv(contacts: Contact[]): string {
   const lines = contacts.map((c) =>
     CONTACT_EXPORT_COLUMNS.map((col) => escapeCell((c as Record<string, unknown>)[col.key as string])).join(","),
   );
-  return [header, ...lines].join("\n");
+  // CRLF per RFC 4180 — stricter CSV consumers (some BI tools) reject LF-only.
+  return [header, ...lines].join("\r\n");
 }
 
 export function downloadCsv(filename: string, csv: string) {
@@ -95,6 +103,7 @@ const HEADER_MAP: Record<string, keyof ContactInsert> = {
   state: "state", region: "state",
   country: "country",
   "company city": "company_city", company_city: "company_city",
+  tags: "tags",
   stage: "pipeline_stage", pipeline_stage: "pipeline_stage", "pipeline stage": "pipeline_stage",
 };
 
@@ -152,6 +161,10 @@ export function csvToContacts(text: string, defaults: Partial<ContactInsert> = {
       } else if (NUMBER_FIELDS.has(key)) {
         const n = parseNumeric(val);
         if (n !== null) obj[key] = n;
+      } else if (key === "tags") {
+        // Exporter joins tags with "; "; accept either that or commas.
+        const parts = val.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length) obj[key] = parts;
       } else {
         obj[key] = val;
       }
