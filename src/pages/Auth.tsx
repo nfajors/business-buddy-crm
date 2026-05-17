@@ -12,6 +12,22 @@ import { passwordSchema, PASSWORD_HINT } from "@/lib/password";
 
 const emailSchema = z.string().trim().email({ message: "Invalid email" }).max(255);
 
+const RESET_ADMIN_EMAIL = "nf@winning.careers";
+
+function buildResetMailto(requesterEmail: string): string {
+  const subject = encodeURIComponent("CRM password reset request");
+  const body = encodeURIComponent(
+    [
+      "Hi Nick,",
+      "",
+      `Please reset the CRM password for: ${requesterEmail || "(your email)"}.`,
+      "",
+      "Thanks!",
+    ].join("\n"),
+  );
+  return `mailto:${RESET_ADMIN_EMAIL}?subject=${subject}&body=${body}`;
+}
+
 export default function Auth() {
   const { user, loading, signIn } = useAuth();
   const [params] = useSearchParams();
@@ -39,10 +55,10 @@ export default function Auth() {
       if (!emailParsed.success) { toast.error(emailParsed.error.issues[0].message); return; }
 
       if (mode === "forgot") {
-        // Password reset endpoint TBD on ZeroDB (#4 follow-up). Until it's
-        // wired, resets are admin-mediated.
-        toast.message("Contact an admin to reset your password.");
-        setMode("signin");
+        // CRM uses a shared password (VITE_CRM_PASSWORD) managed in Railway,
+        // so resets are admin-mediated — open a pre-filled email to the admin.
+        window.location.href = buildResetMailto(emailParsed.data);
+        toast.success("Opening your email client to request a reset.");
         return;
       }
 
@@ -89,7 +105,7 @@ export default function Auth() {
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signin"
               ? "Welcome back. Pick up where you left off."
-              : "Enter your email and we'll send you a reset link."}
+              : "Enter your email and we'll open a pre-filled message to the admin to reset it for you."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -133,17 +149,30 @@ export default function Auth() {
 
             <Button type="submit" className="w-full shadow-gold" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Send reset link"}
+              {mode === "signin" ? "Sign in" : "Email admin to reset"}
             </Button>
           </form>
 
           {mode === "forgot" && (
-            <p className="text-sm text-muted-foreground text-center mt-6">
-              Remembered it?{" "}
-              <button type="button" onClick={() => setMode("signin")} className="text-gold-dark font-semibold hover:underline">
-                Back to sign in
-              </button>
-            </p>
+            <div className="text-sm text-muted-foreground text-center mt-6 space-y-2">
+              <p>
+                The CRM password is a shared secret managed by the admin.
+                Submitting opens your email client with a request addressed to{" "}
+                <a
+                  href={`mailto:${RESET_ADMIN_EMAIL}`}
+                  className="text-gold-dark font-semibold hover:underline"
+                >
+                  {RESET_ADMIN_EMAIL}
+                </a>
+                .
+              </p>
+              <p>
+                Remembered it?{" "}
+                <button type="button" onClick={() => setMode("signin")} className="text-gold-dark font-semibold hover:underline">
+                  Back to sign in
+                </button>
+              </p>
+            </div>
           )}
           {mode === "signin" && (
             <p className="text-xs text-muted-foreground text-center mt-6">

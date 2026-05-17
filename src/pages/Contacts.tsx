@@ -132,24 +132,81 @@ export default function Contacts() {
     setExporting(true);
     try {
       let rows: Contact[] = [];
+      let truncated = false;
+
       if (selectedIds.length > 0) {
-        rows = await Promise.all(selectedIds.map((id) => zerodb.tables.get("contacts", id)));
+        // Concurrency cap + per-row tolerance: a single deleted/blipped contact
+        // should not abort an export of dozens of rows.
+        const CONCURRENCY = 8;
+        const fetched: (Contact | null)[] = new Array(selectedIds.length).fill(null);
+        const failures: { id: string; reason: string }[] = [];
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < selectedIds.length) {
+            const idx = cursor++;
+            const id = selectedIds[idx];
+            try {
+              fetched[idx] = await zerodb.tables.get("contacts", id);
+            } catch (err) {
+              failures.push({ id, reason: (err as Error).message });
+            }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, selectedIds.length) }, () => worker()),
+        );
+        rows = fetched.filter((r): r is Contact => r !== null);
+        if (failures.length > 0) {
+          toast.error(
+            `${failures.length} of ${selectedIds.length} contacts could not be exported (${failures[0].reason})`,
+          );
+        }
       } else {
         const filter: Record<string, unknown> = {};
         if (stageFilter !== "all") filter.pipeline_stage = stageFilter as PipelineStage;
         if (industryFilter !== "all") filter.industry = industryFilter;
         const s = debouncedSearch.trim().toLowerCase();
-        const res = await zerodb.tables.query("contacts", {
-          filter,
-          search: s ? { field: "search_blob", value: s } : undefined,
-          sort: [{ field: "created_at", direction: "desc" }],
-          limit: 10_000,
-        });
-        rows = res.records;
+
+        // Page through results instead of a fixed 10k cap so large bases
+        // export in full (or surface a truncation warning if we hit the
+        // safety ceiling). PAGE_LIMIT is per request; HARD_MAX bounds the
+        // total to keep memory and download size predictable.
+        const PAGE_LIMIT = 500;
+        const HARD_MAX = 50_000;
+        let offset = 0;
+        let total = Infinity;
+        while (rows.length < total && rows.length < HARD_MAX) {
+          const res = await zerodb.tables.query("contacts", {
+            filter,
+            search: s ? { field: "search_blob", value: s } : undefined,
+            sort: [{ field: "created_at", direction: "desc" }],
+            limit: PAGE_LIMIT,
+            offset,
+          });
+          total = res.total ?? rows.length + res.records.length;
+          rows = rows.concat(res.records);
+          if (res.records.length < PAGE_LIMIT) break;
+          offset += PAGE_LIMIT;
+        }
+        if (total > rows.length) {
+          truncated = true;
+          toast.warning(
+            `Export truncated to ${rows.length.toLocaleString()} rows (matching ${total.toLocaleString()}). Narrow your filters to export the rest.`,
+          );
+        }
       }
+
+      if (rows.length === 0) {
+        toast.message("No contacts to export.");
+        return;
+      }
+
       const csv = contactsToCsv(rows);
       const label = selectedIds.length > 0 ? `contacts-selected-${selectedIds.length}` : "contacts";
       downloadCsv(`${label}-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+      if (!truncated && selectedIds.length === 0) {
+        toast.success(`Exported ${rows.length.toLocaleString()} contact${rows.length === 1 ? "" : "s"}`);
+      }
     } catch (e) {
       toast.error((e as Error).message || "Export failed");
     } finally {

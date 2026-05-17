@@ -2,20 +2,27 @@ import type { Contact, ContactInsert } from "@/lib/types";
 
 // Minimal CSV helpers (no external dep, item 7).
 
+// Column labels mirror the importer's HEADER_MAP so a contact can survive
+// an export → re-import round-trip without losing enrichment fields.
 const CONTACT_EXPORT_COLUMNS: { key: keyof Contact; label: string }[] = [
   { key: "first_name", label: "First Name" },
   { key: "last_name", label: "Last Name" },
   { key: "title", label: "Title" },
   { key: "company", label: "Company" },
   { key: "email", label: "Email" },
+  { key: "email_status", label: "Email Status" },
   { key: "work_phone", label: "Work Phone" },
   { key: "mobile_phone", label: "Mobile Phone" },
   { key: "linkedin", label: "LinkedIn" },
   { key: "website", label: "Website" },
   { key: "industry", label: "Industry" },
+  { key: "employees", label: "# Employees" },
+  { key: "annual_revenue", label: "Annual Revenue" },
   { key: "city", label: "City" },
   { key: "state", label: "State" },
   { key: "country", label: "Country" },
+  { key: "company_city", label: "Company City" },
+  { key: "tags", label: "Tags" },
   { key: "pipeline_stage", label: "Stage" },
 ];
 
@@ -32,7 +39,8 @@ export function contactsToCsv(contacts: Contact[]): string {
   const lines = contacts.map((c) =>
     CONTACT_EXPORT_COLUMNS.map((col) => escapeCell((c as Record<string, unknown>)[col.key as string])).join(","),
   );
-  return [header, ...lines].join("\n");
+  // CRLF per RFC 4180 — stricter CSV consumers (some BI tools) reject LF-only.
+  return [header, ...lines].join("\r\n");
 }
 
 export function downloadCsv(filename: string, csv: string) {
@@ -79,18 +87,45 @@ const HEADER_MAP: Record<string, keyof ContactInsert> = {
   "first name": "first_name", firstname: "first_name", first_name: "first_name",
   "last name": "last_name", lastname: "last_name", last_name: "last_name",
   title: "title", role: "title",
-  company: "company", organization: "company", organisation: "company",
+  company: "company", "company name": "company", organization: "company", organisation: "company",
   email: "email", "email address": "email",
+  "email status": "email_status", email_status: "email_status",
   "work phone": "work_phone", phone: "work_phone", work_phone: "work_phone",
+  "work direct phone": "work_phone", "corporate phone": "work_phone",
   "mobile phone": "mobile_phone", mobile: "mobile_phone", mobile_phone: "mobile_phone",
   linkedin: "linkedin", "linkedin url": "linkedin",
+  "person linkedin url": "linkedin", "person linkedin": "linkedin",
   website: "website", url: "website",
   industry: "industry",
+  "# employees": "employees", employees: "employees", "num employees": "employees",
+  "annual revenue": "annual_revenue", annual_revenue: "annual_revenue", revenue: "annual_revenue",
   city: "city",
   state: "state", region: "state",
   country: "country",
+  "company city": "company_city", company_city: "company_city",
+  tags: "tags",
   stage: "pipeline_stage", pipeline_stage: "pipeline_stage", "pipeline stage": "pipeline_stage",
 };
+
+const EMAIL_STATUS_MAP: Record<string, string> = {
+  valid: "valid", verified: "valid",
+  invalid: "invalid", bad: "invalid",
+  catchall: "catchall", "catch-all": "catchall", catch_all: "catchall",
+  "accept all": "accept_all", accept_all: "accept_all", "accept-all": "accept_all",
+  disposable: "disposable",
+  role: "role",
+  unverified: "unverified",
+  unknown: "unknown", "": "unknown",
+};
+
+const NUMBER_FIELDS = new Set<keyof ContactInsert>(["employees", "annual_revenue"]);
+
+function parseNumeric(value: string): number | null {
+  const cleaned = value.replace(/[$,\s]/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
 
 const STAGE_MAP: Record<string, string> = {
   new: "new", contacted: "contacted", responded: "responded",
@@ -120,6 +155,16 @@ export function csvToContacts(text: string, defaults: Partial<ContactInsert> = {
       if (key === "pipeline_stage") {
         const mapped = STAGE_MAP[val.toLowerCase()];
         if (mapped) obj[key] = mapped;
+      } else if (key === "email_status") {
+        const mapped = EMAIL_STATUS_MAP[val.toLowerCase()];
+        if (mapped) obj[key] = mapped;
+      } else if (NUMBER_FIELDS.has(key)) {
+        const n = parseNumeric(val);
+        if (n !== null) obj[key] = n;
+      } else if (key === "tags") {
+        // Exporter joins tags with "; "; accept either that or commas.
+        const parts = val.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length) obj[key] = parts;
       } else {
         obj[key] = val;
       }
