@@ -20,7 +20,7 @@ function buildResetMailto(requesterEmail: string): string {
     [
       "Hi Nick,",
       "",
-      `Please reset the CRM password for: ${requesterEmail || "(your email)"}.`,
+      `Please reset my CRM password for: ${requesterEmail || "(your email)"}.`,
       "",
       "Thanks!",
     ].join("\n"),
@@ -55,8 +55,7 @@ export default function Auth() {
       if (!emailParsed.success) { toast.error(emailParsed.error.issues[0].message); return; }
 
       if (mode === "forgot") {
-        // CRM uses a shared password (VITE_CRM_PASSWORD) managed in Railway,
-        // so resets are admin-mediated — open a pre-filled email to the admin.
+        // Password resets are admin-mediated — open a pre-filled email.
         window.location.href = buildResetMailto(emailParsed.data);
         toast.success("Opening your email client to request a reset.");
         return;
@@ -156,7 +155,7 @@ export default function Auth() {
           {mode === "forgot" && (
             <div className="text-sm text-muted-foreground text-center mt-6 space-y-2">
               <p>
-                The CRM password is a shared secret managed by the admin.
+                Password resets are handled by an admin.
                 Submitting opens your email client with a request addressed to{" "}
                 <a
                   href={`mailto:${RESET_ADMIN_EMAIL}`}

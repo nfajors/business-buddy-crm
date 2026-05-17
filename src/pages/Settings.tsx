@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, LogOut, Save, ShieldCheck, Upload, Trash2 } from "lucide-react";
+import { Loader2, Lock, LogOut, Save, ShieldCheck, Upload, Trash2 } from "lucide-react";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { zerodb } from "@/integrations/zerodb/client";
@@ -41,7 +41,7 @@ export default function Settings() {
           setAvatarUrl(profile.avatar_url ?? null);
         }
       } catch {
-        toast.error("Could not load profile");
+        // Swallow errors on initial profile load — missing profile is expected for new users
       } finally {
         setLoading(false);
       }
@@ -174,12 +174,13 @@ export default function Settings() {
             </section>
 
             <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
-              <h3 className="font-bold mb-1">Password & two-factor</h3>
-              <p className="text-sm text-muted-foreground">
-                Self-serve password change and two-factor enrollment are
-                temporarily unavailable while we migrate the backend.
-                Contact an admin if you need either.
+              <h3 className="font-bold mb-1">Password</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Change your personal CRM login password.
               </p>
+              <Button variant="outline" onClick={() => navigate("/settings/password")}>
+                <Lock className="h-4 w-4 mr-2" /> Change password
+              </Button>
             </section>
 
             {isAdmin && (

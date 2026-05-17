@@ -15,6 +15,7 @@ import Pipeline from "./pages/Pipeline.tsx";
 import Tasks from "./pages/Tasks.tsx";
 import Settings from "./pages/Settings.tsx";
 import Diagnostics from "./pages/admin/Diagnostics.tsx";
+import ChangePassword from "./pages/ChangePassword.tsx";
 import { AuthProvider } from "./hooks/useAuth.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
 
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/admin/diagnostics" element={<ProtectedRoute><Diagnostics /></ProtectedRoute>} />
+            <Route path="/settings/password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
