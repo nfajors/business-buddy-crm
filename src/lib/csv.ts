@@ -79,18 +79,44 @@ const HEADER_MAP: Record<string, keyof ContactInsert> = {
   "first name": "first_name", firstname: "first_name", first_name: "first_name",
   "last name": "last_name", lastname: "last_name", last_name: "last_name",
   title: "title", role: "title",
-  company: "company", organization: "company", organisation: "company",
+  company: "company", "company name": "company", organization: "company", organisation: "company",
   email: "email", "email address": "email",
+  "email status": "email_status", email_status: "email_status",
   "work phone": "work_phone", phone: "work_phone", work_phone: "work_phone",
+  "work direct phone": "work_phone", "corporate phone": "work_phone",
   "mobile phone": "mobile_phone", mobile: "mobile_phone", mobile_phone: "mobile_phone",
   linkedin: "linkedin", "linkedin url": "linkedin",
+  "person linkedin url": "linkedin", "person linkedin": "linkedin",
   website: "website", url: "website",
   industry: "industry",
+  "# employees": "employees", employees: "employees", "num employees": "employees",
+  "annual revenue": "annual_revenue", annual_revenue: "annual_revenue", revenue: "annual_revenue",
   city: "city",
   state: "state", region: "state",
   country: "country",
+  "company city": "company_city", company_city: "company_city",
   stage: "pipeline_stage", pipeline_stage: "pipeline_stage", "pipeline stage": "pipeline_stage",
 };
+
+const EMAIL_STATUS_MAP: Record<string, string> = {
+  valid: "valid", verified: "valid",
+  invalid: "invalid", bad: "invalid",
+  catchall: "catchall", "catch-all": "catchall", catch_all: "catchall",
+  "accept all": "accept_all", accept_all: "accept_all", "accept-all": "accept_all",
+  disposable: "disposable",
+  role: "role",
+  unverified: "unverified",
+  unknown: "unknown", "": "unknown",
+};
+
+const NUMBER_FIELDS = new Set<keyof ContactInsert>(["employees", "annual_revenue"]);
+
+function parseNumeric(value: string): number | null {
+  const cleaned = value.replace(/[$,\s]/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
 
 const STAGE_MAP: Record<string, string> = {
   new: "new", contacted: "contacted", responded: "responded",
@@ -120,6 +146,12 @@ export function csvToContacts(text: string, defaults: Partial<ContactInsert> = {
       if (key === "pipeline_stage") {
         const mapped = STAGE_MAP[val.toLowerCase()];
         if (mapped) obj[key] = mapped;
+      } else if (key === "email_status") {
+        const mapped = EMAIL_STATUS_MAP[val.toLowerCase()];
+        if (mapped) obj[key] = mapped;
+      } else if (NUMBER_FIELDS.has(key)) {
+        const n = parseNumeric(val);
+        if (n !== null) obj[key] = n;
       } else {
         obj[key] = val;
       }

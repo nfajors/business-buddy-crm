@@ -37,7 +37,7 @@ export function ImportContactsDialog({ open, onOpenChange }: { open: boolean; on
         <DialogHeader>
           <DialogTitle>Import contacts from CSV</DialogTitle>
           <DialogDescription>
-            Expected headers: First Name, Last Name, Title, Company, Email, Work Phone, Mobile Phone, LinkedIn, Website, Industry, City, State, Country, Stage.
+            Expected headers: First Name, Last Name, Title, Company (or Company Name), Email, Email Status, Work Phone (or Work Direct Phone / Corporate Phone), Mobile Phone, LinkedIn (or Person Linkedin Url), Website, Industry, # Employees, Annual Revenue, City, State, Country, Company City, Stage. Apollo exports work out of the box.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
