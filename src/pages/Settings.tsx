@@ -106,11 +106,15 @@ export default function Settings() {
             </section>
 
             <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
-              <h3 className="font-bold mb-1">Password & two-factor</h3>
-              <p className="text-sm text-muted-foreground">
-                Self-serve password change and two-factor enrollment are
-                temporarily unavailable while we migrate the backend.
-                Contact an admin if you need either.
+              <h3 className="font-bold mb-1">Password</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Update your password from the change-password page.
+              </p>
+              <Button variant="outline" onClick={() => navigate("/change-password")}>
+                Change password
+              </Button>
+              <p className="text-xs text-muted-foreground mt-3">
+                Two-factor enrollment isn't available yet — tracked as a follow-up to #16.
               </p>
             </section>
 
