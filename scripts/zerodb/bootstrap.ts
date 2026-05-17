@@ -18,8 +18,6 @@
 const API_URL = process.env.VITE_ZERODB_API_URL ?? "https://api.ainative.studio/v1";
 const PROJECT_ID = process.env.VITE_ZERODB_PROJECT_ID;
 const API_KEY = process.env.VITE_ZERODB_API_KEY;
-const ADMIN_EMAIL = process.env.ZERODB_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.ZERODB_ADMIN_PASSWORD;
 
 type FieldType = "string" | "text" | "number" | "boolean" | "timestamp" | "json" | "string[]";
 
@@ -132,46 +130,31 @@ const TABLES: TableSpec[] = [
   },
 ];
 
-async function login(): Promise<string> {
-  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-    throw new Error("Set ZERODB_ADMIN_EMAIL and ZERODB_ADMIN_PASSWORD before running bootstrap.");
-  }
-  const res = await fetch(`${API_URL}/public/auth/login-json`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(API_KEY ? { "X-API-Key": API_KEY } : {}) },
-    body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
-  });
-  if (!res.ok) throw new Error(`login failed: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as { access_token: string };
-  return body.access_token;
-}
-
-async function createTable(token: string, spec: TableSpec): Promise<"created" | "exists"> {
-  const res = await fetch(`${API_URL}/projects/${PROJECT_ID}/tables`, {
+async function createTable(spec: TableSpec): Promise<"created" | "exists"> {
+  if (!API_KEY) throw new Error("VITE_ZERODB_API_KEY is required.");
+  // Endpoint: POST /api/v1/projects/{id}/database/tables
+  // API_URL is https://api.ainative.studio/v1 — strip /v1 for the /api/v1/... path
+  const baseUrl = API_URL.replace(/\/v1$/, "");
+  const res = await fetch(`${baseUrl}/api/v1/projects/${PROJECT_ID}/database/tables`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      "X-API-Key": API_KEY,
     },
-    body: JSON.stringify({
-      name: spec.name,
-      fields: spec.fields,
-      indexes: spec.indexes ?? [],
-    }),
+    body: JSON.stringify({ table_name: spec.name }),
   });
   if (res.ok) return "created";
   const text = await res.text();
-  if (res.status === 409 || /already exists/i.test(text)) return "exists";
+  if (res.status === 409 || /already exists/i.test(text) || /duplicate/i.test(text)) return "exists";
   throw new Error(`create-table ${spec.name} failed: ${res.status} ${text}`);
 }
 
 async function main() {
   if (!PROJECT_ID) throw new Error("VITE_ZERODB_PROJECT_ID is required.");
+  if (!API_KEY) throw new Error("VITE_ZERODB_API_KEY is required.");
   console.log(`[bootstrap] api=${API_URL} project=${PROJECT_ID}`);
-  const token = await login();
   for (const spec of TABLES) {
-    const result = await createTable(token, spec);
+    const result = await createTable(spec);
     console.log(`[bootstrap] ${spec.name}: ${result}`);
   }
   console.log("[bootstrap] done.");

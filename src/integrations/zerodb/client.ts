@@ -16,7 +16,10 @@ import type {
 const STORAGE_KEY = "zerodb.session";
 const REFRESH_INTERVAL_MS = 25 * 60 * 1000;
 
+// Base URL for auth/vector endpoints: https://api.ainative.studio/v1
+// Table CRUD endpoints live under /api/v1/... (different prefix)
 const API_URL = import.meta.env.VITE_ZERODB_API_URL ?? "https://api.ainative.studio/v1";
+const TABLE_API_URL = API_URL.replace(/\/v1$/, "/api/v1");
 const PROJECT_ID = import.meta.env.VITE_ZERODB_PROJECT_ID ?? "";
 const API_KEY = import.meta.env.VITE_ZERODB_API_KEY ?? "";
 
@@ -87,7 +90,7 @@ class ZeroDBClient {
     }
   }
 
-  async request<T>(path: string, init: RequestInit & { skipAuth?: boolean } = {}): Promise<T> {
+  async request<T>(path: string, init: RequestInit & { skipAuth?: boolean; tableApi?: boolean } = {}): Promise<T> {
     const headers = new Headers(init.headers);
     if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
     if (API_KEY) headers.set("X-API-Key", API_KEY);
@@ -95,7 +98,8 @@ class ZeroDBClient {
       headers.set("Authorization", `Bearer ${this.session.token}`);
     }
 
-    const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+    const base = init.tableApi ? TABLE_API_URL : API_URL;
+    const res = await fetch(`${base}${path}`, { ...init, headers });
     const text = await res.text();
     const body = text ? safeJsonParse(text) : null;
 
@@ -118,9 +122,10 @@ class AuthAPI {
   constructor(private client: ZeroDBClient) {}
 
   async login(email: string, password: string): Promise<AuthSession> {
+    // ZeroDB login-json uses `username` field (not `email`)
     const res = await this.client.request<AuthResponse>("/public/auth/login-json", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username: email, password }),
       skipAuth: true,
     });
     const session = toSession(res, email);
@@ -155,17 +160,19 @@ class AuthAPI {
 class TablesAPI {
   constructor(private client: ZeroDBClient) {}
 
+  // Correct path per ZeroDB docs: /api/v1/projects/{id}/database/tables/{name}
   private base(table: TableName): string {
-    return `/projects/${this.client.projectId}/tables/${table}`;
+    return `/projects/${this.client.projectId}/database/tables/${table}`;
   }
 
   async query<T extends TableName>(
     table: T,
     options: QueryOptions = {},
   ): Promise<QueryResult<TableSchemas[T]["Row"]>> {
-    return this.client.request(`${this.base(table)}/query`, {
+    return this.client.request(`${this.base(table)}/rows/query`, {
       method: "POST",
       body: JSON.stringify(options),
+      tableApi: true,
     });
   }
 
@@ -173,16 +180,19 @@ class TablesAPI {
     table: T,
     id: string,
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/records/${encodeURIComponent(id)}`);
+    return this.client.request(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
+      tableApi: true,
+    });
   }
 
   async insert<T extends TableName>(
     table: T,
     record: TableSchemas[T]["Insert"],
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/records`, {
+    return this.client.request(`${this.base(table)}/rows`, {
       method: "POST",
-      body: JSON.stringify(record),
+      body: JSON.stringify({ row_data: record }),
+      tableApi: true,
     });
   }
 
@@ -190,9 +200,10 @@ class TablesAPI {
     table: T,
     records: TableSchemas[T]["Insert"][],
   ): Promise<TableSchemas[T]["Row"][]> {
-    return this.client.request(`${this.base(table)}/records/batch`, {
+    return this.client.request(`${this.base(table)}/rows/bulk`, {
       method: "POST",
-      body: JSON.stringify({ records }),
+      body: JSON.stringify({ records: records.map((r) => ({ row_data: r })) }),
+      tableApi: true,
     });
   }
 
@@ -201,15 +212,17 @@ class TablesAPI {
     id: string,
     patch: TableSchemas[T]["Update"],
   ): Promise<TableSchemas[T]["Row"]> {
-    return this.client.request(`${this.base(table)}/records/${encodeURIComponent(id)}`, {
-      method: "PATCH",
+    return this.client.request(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
+      method: "PUT",
       body: JSON.stringify(patch),
+      tableApi: true,
     });
   }
 
   async remove<T extends TableName>(table: T, id: string): Promise<void> {
-    await this.client.request(`${this.base(table)}/records/${encodeURIComponent(id)}`, {
+    await this.client.request(`${this.base(table)}/rows/${encodeURIComponent(id)}`, {
       method: "DELETE",
+      tableApi: true,
     });
   }
 
