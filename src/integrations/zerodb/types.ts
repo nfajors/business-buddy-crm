@@ -117,6 +117,10 @@ export interface Profile {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  // True until the user replaces their admin-issued temp password.
+  // App-managed (not stored on the ZeroDB user object) since the user
+  // model is opaque from the client.
+  must_change_password: boolean | null;
   created_at: string;
   updated_at: string;
 }

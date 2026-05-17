@@ -115,6 +115,8 @@ const TABLES: TableSpec[] = [
     fields: [
       { name: "display_name", type: "string" },
       { name: "avatar_url", type: "string" },
+      // Set by provision-users / set-password; cleared on self-serve change (#16).
+      { name: "must_change_password", type: "boolean", defaultValue: false },
       { name: "created_at", type: "timestamp", required: true },
       { name: "updated_at", type: "timestamp", required: true },
     ],

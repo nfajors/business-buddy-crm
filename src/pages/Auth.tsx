@@ -55,8 +55,9 @@ export default function Auth() {
       if (!emailParsed.success) { toast.error(emailParsed.error.issues[0].message); return; }
 
       if (mode === "forgot") {
-        // CRM uses a shared password (VITE_CRM_PASSWORD) managed in Railway,
-        // so resets are admin-mediated — open a pre-filled email to the admin.
+        // Self-serve reset endpoint isn't confirmed on ZeroDB yet (#16);
+        // until then, mailto-admin is the path. The admin runs
+        // `npm run zerodb:set-password` to issue a new temp password.
         window.location.href = buildResetMailto(emailParsed.data);
         toast.success("Opening your email client to request a reset.");
         return;

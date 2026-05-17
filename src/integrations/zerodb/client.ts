@@ -155,6 +155,19 @@ class AuthAPI {
   async refresh(): Promise<void> {
     // intentionally empty until refresh endpoint is confirmed
   }
+
+  // Self-serve password change. ZeroDB's exact endpoint hasn't been
+  // documented to us, so the change-password UI catches errors here and
+  // falls back to admin-mediated reset (see scripts/zerodb/set-password.ts).
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.client.request("/public/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+  }
 }
 
 class TablesAPI {
@@ -234,9 +247,13 @@ class TablesAPI {
 
 function toSession(res: AuthResponse, email: string): AuthSession {
   const expiresInSec = res.expires_in ?? 30 * 60;
+  // Force user.id to the email so existing created_by / owner_id rows
+  // (recorded as emails under the shared-password regime) keep working
+  // without a backfill migration. ZeroDB's real user UUID is unused
+  // app-side; the JWT is what gates table access.
   return {
     token: res.access_token,
-    user: res.user ?? { id: "", email },
+    user: { id: email, email },
     expiresAt: Date.now() + expiresInSec * 1000,
   };
 }
