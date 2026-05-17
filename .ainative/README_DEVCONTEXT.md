@@ -492,7 +492,7 @@ client.store_memory(
 
 #### API Documentation
 
-**URL**: https://api.ainative.studio/docs
+**URL**: https://docs.ainative.studio
 
 Interactive API documentation with:
 - Complete endpoint reference

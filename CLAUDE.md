@@ -40,7 +40,7 @@ scripts/
 - **Project**: Business Buddy CRM
 - **Project ID**: eaa2db3e-f83a-4cc3-84f4-299b882e3094
 - **Owner**: admin@winning.careers (Winning Careers account)
-- **API**: https://api.ainative.studio/v1
+- **API**: https://api.ainative.studio
 - **Tables**: contacts, notes, activities, tasks, profiles, user_roles
 - **Table CRUD path**: `/api/v1/projects/{id}/database/tables/{name}/rows`
 - **Credentials**: See Railway env vars (never hardcode)

@@ -373,5 +373,5 @@ const client = new Client({ connectionString: database_url })
 ## Support
 
 For issues or questions about ZeroDB:
-- API Docs: https://api.ainative.studio/docs
+- API Docs: https://docs.ainative.studio
 - GitHub: Check project repository for issues

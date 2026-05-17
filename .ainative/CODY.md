@@ -43,18 +43,32 @@ Refs #123
 
 ## Quick Reference
 
-**Stack:** Python 3.11, FastAPI, PostgreSQL, Redis, Celery, Kong
-**Deploy:** Railway (prod), Docker (dev)
+**Stack:** React + TypeScript + Vite + Tailwind + shadcn/ui
+**Deploy:** Railway (auto-deploy from `main`)
+**Live URL:** https://business-buddy-crm-production.up.railway.app
+**Repo:** https://github.com/nfajors/business-buddy-crm
 
 ### Structure
 ```
-/Volumes/Cody/projects/winning-backend/
-├── src/backend/app/{api,models,services,schemas,tasks}
-├── src/backend/{tests,alembic}
-├── sdks/{python,typescript,go}
-├── packages/{mcp-servers,tools}
-└── docs/{reports,deployment}
+business-buddy-crm/
+├── src/
+│   ├── components/        — Shared UI components
+│   ├── hooks/useAuth.tsx  — ZeroDB auth hook
+│   ├── integrations/zerodb/ — ZeroDB client + types
+│   ├── lib/{queries,mutations,audit,auth-allowlist}.ts
+│   └── pages/             — Route-level components
+├── scripts/zerodb/        — One-off scripts (bootstrap, migrations)
+└── docs/{category}/       — All documentation
 ```
+
+### ZeroDB (Business Buddy CRM Project)
+- **Project ID**: `eaa2db3e-f83a-4cc3-84f4-299b882e3094`
+- **Owner**: admin@winning.careers (Winning Careers account)
+- **API Base**: `https://api.ainative.studio`
+- **Table CRUD**: `/api/v1/projects/{id}/database/tables/{name}/rows`
+- **Tables**: `contacts`, `notes`, `activities`, `tasks`, `profiles`, `user_roles`
+- **Auth model**: API key (`VITE_ZERODB_API_KEY`) + allowlist gate + `VITE_CRM_PASSWORD`
+- **Credentials**: Set in Railway env vars — never hardcode
 
 ---
 
@@ -70,208 +84,104 @@ Refs #123
 - Docs → `docs/{category}/`
 - No root `.md` (except README.md)
 
-### 3. Testing (MANDATORY)
-
-**ZERO TOLERANCE - Execute before claiming pass:**
-```bash
-# Backend
-cd src/backend
-python3 -m pytest tests/ -v --cov=app --cov-report=term-missing
-
-# Must see: ✓ PASSED, ✓ 80%+ coverage
-```
-
-**Requirements:**
-- 80%+ coverage with proof
-- All endpoints tested
-- Output captured for PRs
-
-**Incidents learned:**
-- Email service deployed untested
-- Tests written but never run
+### 3. Testing
+- Test features against the live Railway deployment before closing issues
+- Verify ZeroDB writes return success responses (don't assume)
+- No untested code merged to `main`
 
 ### 4. Code Quality
-- Type hints all functions
-- Docstrings public methods
-- SQLAlchemy ORM only
-- Multi-tenant `organization_id`
-- Rate limiting all endpoints
+- TypeScript strict mode
+- All ZeroDB calls go through `src/integrations/zerodb/client.ts`
+- No direct `fetch` to ZeroDB outside the integration layer
+- Input validation at all form boundaries
 
 ---
 
 ## Architecture
 
-### API Routes
-- `/v1/*` - Public (API key/Bearer)
-- `/admin/*` - Superuser only
-- `/health` - No auth
-- `/webhooks/*` - Signature verify
+### Auth Flow
+1. User enters allowlisted email + `VITE_CRM_PASSWORD`
+2. `useAuth.tsx` validates locally — no network call
+3. Local session minted using `VITE_ZERODB_API_KEY` as token
+4. All ZeroDB data calls use API key — no user account auth
 
-### Auth
-- JWT (access+refresh)
-- API keys (org-scoped)
-- RBAC: user/admin/superuser
+### ZeroDB Client
+- Client: `src/integrations/zerodb/client.ts`
+- Auth API base: `https://api.ainative.studio/v1`
+- Table API base: `https://api.ainative.studio/api/v1`
+- Table rows path: `/projects/{id}/database/tables/{name}/rows`
+- Auth header: `X-API-Key: {key}`
 
-### Database
-- PostgreSQL (Railway)
-- Redis (cache/rate-limit)
-- Alembic migrations
-- Indexes on FKs
+### Env Vars (Railway — baked at build time)
+```
+VITE_ZERODB_API_URL=https://api.ainative.studio/v1
+VITE_ZERODB_PROJECT_ID=eaa2db3e-f83a-4cc3-84f4-299b882e3094
+VITE_ZERODB_API_KEY=wc_prod_57c3d482d115aeb2490dc1b0b6fa100312b08657
+VITE_CRM_PASSWORD=<set in Railway — never hardcode>
+```
 
-### Services
-- Email: EnhancedEmailService (Resend/SMTP/SendGrid/SES)
-- Billing: Stripe+Kong metrics
-- Notifications: Email/Slack/PagerDuty/webhooks
-- Queue: Celery+Redis
-- Gateway: Kong
-
----
+### Allowlisted Users
+- `nf@winning.careers` (admin)
+- `mf@winning.careers`
+- `caleb@winning.careers`
+- `scott@inspiration-labs.com`
 
 ## Common Tasks
 
-### New API Endpoint
-1. `app/api/v1/endpoints/{feature}.py`
-2. `app/schemas/{feature}.py`
-3. `app/models/{feature}.py` (if needed)
-4. `app/services/{feature}_service.py`
-5. `alembic revision -m "desc"`
-6. `tests/test_{feature}.py`
-7. Register in `app/api/v1/__init__.py`
-8. Test, commit (NO AI ATTRIBUTION)
-
-### Tests
-```bash
-cd src/backend
-pytest tests/ -v --cov
-```
-
-### Migrations
-```bash
-alembic revision -m "msg"
-alembic upgrade head
-alembic downgrade -1
-```
+### Add a new page/feature
+1. Create GitHub issue first (`Refs #N` in every commit)
+2. Branch: `feat/[issue]-short-description`
+3. Add component in `src/pages/` or `src/components/`
+4. Data reads → `src/lib/queries.ts`, writes → `src/lib/mutations.ts`
+5. Test on local dev, verify on Railway after merge
 
 ### Dev Start
 ```bash
-cd src/backend
-uvicorn app.main:app --reload --port 8000
-celery -A app.tasks.celery_app worker -l info
-celery -A app.tasks.celery_app beat -l info
+npm install
+npm run dev  # http://localhost:5173
 ```
 
----
-
-## Environment Variables
-
-```bash
-DATABASE_URL=postgresql://user:pass@localhost:5432/ainative_dev
-REDIS_URL=redis://localhost:6379/0
-RESEND_API_KEY=re_xxxxx
-STRIPE_API_KEY=sk_test_xxxxx
-STRIPE_WEBHOOK_SECRET=whsec_xxxxx
-SECRET_KEY=your-secret-key
-KONG_ADMIN_URL=http://localhost:8001
-KONG_PROXY_URL=http://localhost:8000
-```
-
----
-
-## Recent Work
-
-### Completed
-- Email Service (#138-141): Multi-provider, templates, rate-limit
-- Notifications (#142-148, #157-158): CRUD, Slack, PagerDuty, webhooks
-- Latest Sprint (#92,#164,#319,#156,#306,#160,#173):
-  - Invoice emails+Stripe
-  - Kong billing metrics
-  - Dev analytics/logs
-  - Python SDK table ops (v1.0.1)
-  - PostgreSQL MCP tools (7)
-  - Railway networking
+### Deploy
+Push to `main` — Railway auto-deploys. `VITE_*` vars baked at build time; changing them in Railway requires triggering a new deploy.
 
 ---
 
 ## Key Files
 
-### Config
-- `app/main.py` - FastAPI app
-- `app/db/base.py` - SQLAlchemy
-- `app/core/config.py` - Settings
-- `app/api/deps.py` - Dependencies
+### Integration
+- `src/integrations/zerodb/client.ts` — ZeroDB client (all API calls)
+- `src/integrations/zerodb/types.ts` — Shared types
 
-### Services
-- `services/email_service_enhanced.py`
-- `services/billing_service.py`
-- `services/stripe_service.py`
-- `services/kong_metrics_collector.py`
-- `services/auth_service.py`
+### Auth & Data
+- `src/hooks/useAuth.tsx` — Auth context (allowlist + API key session)
+- `src/lib/queries.ts` — All data reads
+- `src/lib/mutations.ts` — All data writes
+- `src/lib/auth-allowlist.ts` — Allowed email list
+- `src/lib/audit.ts` — App-layer activity logging
 
-### Models
-- `models/{user,organization,billing,notification}.py`
+### Scripts
+- `scripts/zerodb/bootstrap.ts` — Table creation (run once)
 
 ---
 
 ## Deployment Checklist
 
-- [ ] Tests passing (`pytest`)
-- [ ] No AI attribution (`git log`)
-- [ ] Migrations tested
-- [ ] Railway env vars set
-- [ ] API docs updated
-- [ ] Error handling complete
-- [ ] Rate limiting configured
-- [ ] Multi-tenant verified
-- [ ] Security reviewed
-
----
-
-## MCP Servers
-
-- **ZeroDB**: 76 ops (vectors, memory, RLHF, tables, files, PostgreSQL, quantum)
-- **GitHub**: Repos, issues, PRs, commits
-- **Strapi**: CMS, blog, tutorials, events
-
----
-
-## Package Publishing
-
-### Python SDK (PyPI)
-**Name:** `zerodb-mcp`
-**Registry:** https://pypi.org/project/zerodb-mcp/
-**Version:** 1.0.0 → 1.0.1 (ready)
-**Creds:** `~/.pypirc` (`__token__`/`pypi-[token]`)
-
-```bash
-cd sdks/python
-pytest tests/ -v --cov=zerodb_mcp  # 51 tests, 65%
-python -m build
-twine upload --repository testpypi dist/*  # Test first
-twine upload dist/*  # PERMANENT!
-```
-
-**Notes:** PyPI permanent, test first, no reuse versions
-
-### TypeScript SDK (NPM)
-**Name:** `@zerodb/mcp-client`
-**Status:** Not configured yet
-**Required:** `npm login` or `NPM_TOKEN`
-
-```bash
-cd sdks/typescript/zerodb-mcp-client
-npm test && npm run build
-npm publish --access public  # Scoped package
-```
+- [ ] Feature tested on live Railway URL
+- [ ] No AI attribution in commits (`git log`)
+- [ ] ZeroDB write responses verified (not assumed)
+- [ ] Railway env vars set (if new `VITE_*` vars added)
+- [ ] GitHub issue closed
 
 ---
 
 ## Resources
 
-- API: https://api.ainative.studio
-- Railway: https://railway.app
-- Stripe: https://dashboard.stripe.com
-- Kong: http://localhost:8001 (dev)
-- PyPI: https://pypi.org/project/zerodb-mcp/
+- **ZeroDB Docs**: https://docs.ainative.studio
+- **ZeroDB Platform**: https://ainative.studio
+- **ZeroDB API Base**: https://api.ainative.studio
+- **CRM Live**: https://business-buddy-crm-production.up.railway.app
+- **CRM Repo**: https://github.com/nfajors/business-buddy-crm
+- **Railway**: https://railway.app
 
 ---
 

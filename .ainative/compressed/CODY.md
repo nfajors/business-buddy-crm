@@ -1,106 +1,67 @@
-# AINative Core - Project Memory
+# Business Buddy CRM — Agent Context (Compressed)
+
+## Project
+**Stack**: React + TypeScript + Vite + Tailwind + shadcn/ui  
+**Live**: https://business-buddy-crm-production.up.railway.app  
+**Repo**: https://github.com/nfajors/business-buddy-crm
+
+## ZeroDB (CRM Project)
+- **Project ID**: `eaa2db3e-f83a-4cc3-84f4-299b882e3094`
+- **Owner**: admin@winning.careers
+- **API Base**: `https://api.ainative.studio`
+- **Table path**: `/api/v1/projects/{id}/database/tables/{name}/rows`
+- **Tables**: contacts, notes, activities, tasks, profiles, user_roles
+- **Auth**: API key (`VITE_ZERODB_API_KEY`) + allowlist + `VITE_CRM_PASSWORD`
+- **Docs**: https://docs.ainative.studio
 
 ## Critical Rules
 
 ### 1. Git Commits
 - Zero tolerance for AI attribution
-- Hook blocks forbidden text
+- Hook: `.git/hooks/commit-msg` blocks forbidden text
 
 ### 2. File Placement
 - Docs → `docs/{category}/`
-- No root `.md` (except README.md)
+- No root `.md` (except README.md, CLAUDE.md)
 
-### 3. Testing (MANDATORY)
-```bash
-cd src/backend
-python3 -m pytest tests/ -v --cov=app --cov-report=term-missing
-```
-- 80%+ coverage required
-- All endpoints tested
+### 3. Testing
+- Verify on live Railway URL before closing issues
+- Confirm ZeroDB writes return success
 
 ### 4. Code Quality
-- Type hints all functions
-- Docstrings public methods
-- SQLAlchemy ORM only
-- Multi-tenant `organization_id`
-- Rate limiting all endpoints
+- All ZeroDB calls via `src/integrations/zerodb/client.ts`
+- No direct fetch to ZeroDB outside integration layer
 
-## Architecture
+## Key Files
+- `src/integrations/zerodb/client.ts` — ZeroDB client
+- `src/hooks/useAuth.tsx` — Auth (allowlist + API key session)
+- `src/lib/queries.ts` / `mutations.ts` — Data layer
+- `src/lib/auth-allowlist.ts` — Allowed emails
 
-### API Routes
-- `/v1/*` - Public (API key/Bearer)
-- `/admin/*` - Superuser only
-- `/health` - No auth
-- `/webhooks/*` - Signature verify
+## Allowlisted Users
+- `nf@winning.careers` (admin), `mf@winning.careers`, `caleb@winning.careers`, `scott@inspiration-labs.com`
 
-### Auth
-- JWT (access+refresh)
-- API keys (org-scoped)
-- RBAC: user/admin/superuser
-
-### Database
-- PostgreSQL (Railway)
-- Redis (cache/rate-limit)
-- Alembic migrations
-- Indexes on FKs
-
-## Common Tasks
-
-### New API Endpoint
-1. `app/api/v1/endpoints/{feature}.py`
-2. `app/schemas/{feature}.py`
-3. `app/models/{feature}.py` (if needed)
-4. `app/services/{feature}_service.py`
-5. `alembic revision -m "desc"`
-6. `tests/test_{feature}.py`
-7. Register in `app/api/v1/__init__.py`
-8. Test, commit (NO AI ATTRIBUTION)
-
-## Environment Variables
+## Dev
 ```bash
-DATABASE_URL=postgresql://user:pass@localhost:5432/ainative_dev
-REDIS_URL=redis://localhost:6379/0
-RESEND_API_KEY=re_xxxxx
-STRIPE_API_KEY=sk_test_xxxxx
-SECRET_KEY=your-secret-key
-```
-
-## Package Publishing
-
-### Python SDK (PyPI)
-```bash
-cd sdks/python
-pytest tests/ -v --cov=zerodb_mcp
-python -m build
-twine upload dist/*
-```
-
-### TypeScript SDK (NPM)
-```bash
-cd sdks/typescript/zerodb-mcp-client
-npm test && npm run build
-npm publish --access public
+npm install && npm run dev  # http://localhost:5173
 ```
 
 ## Deployment Checklist
-- [ ] Tests passing
-- [ ] No AI attribution
-- [ ] Migrations tested
-- [ ] Railway env vars set
-- [ ] Rate limiting configured
+- [ ] Feature works on Railway live URL
+- [ ] No AI attribution in commits
+- [ ] ZeroDB writes verified
+- [ ] GitHub issue closed
 
 ## Resources
-- API: https://api.ainative.studio
+- ZeroDB Docs: https://docs.ainative.studio
+- ZeroDB API: https://api.ainative.studio
 - Railway: https://railway.app
-- PyPI: https://pypi.org/project/zerodb-mcp/
 
 ## Final Reminder
-1. NO Claude/Anthropic/ChatGPT/Copilot
+1. NO Claude/Anthropic/ChatGPT/Copilot in commits or code
 2. ONLY AINative branding allowed
-3. Tests executed with proof
+3. Verify on live site before done
 
 **APPROVED:**
-✅ Built by AINative
-✅ AINative Cloud
-✅ Built by Agent Swarm
+✅ Built by AINative Dev Team
 ✅ All Data Services Built on ZeroDB
