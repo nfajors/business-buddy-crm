@@ -1,6 +1,6 @@
 # Business Buddy CRM — ZeroDB Enhancement Sprint Backlog
 
-**Version**: 1.0  
+**Version**: 1.1  
 **Status**: Awaiting Team Review  
 **Author**: AINative Dev Team (Cody)  
 **Date**: 2026-05-17  
@@ -17,8 +17,9 @@
 | Sprint 2 | Semantic Search | 13 | Vector search live, existing contacts backfilled |
 | Sprint 3 | File Attachments | 8 | Upload/download on contact detail page |
 | Sprint 4–5 | AI Contact Summaries | 13 | Living summary card per contact |
-| Sprint 6–7 | Pipeline Intelligence & Lead Scoring | 13 | Smart sort + lead score badges |
-| Sprint 8 | Analytics Dashboard | 8 | Rich metrics view with time-series |
+| Sprint 6 | Hunter.io Lead Generation | 13 | Domain search, email finder, verifier live |
+| Sprint 7–8 | Pipeline Intelligence & Lead Scoring | 13 | Smart sort + lead score badges |
+| Sprint 9 | Analytics Dashboard | 8 | Rich metrics view with time-series |
 
 ---
 
@@ -364,7 +365,141 @@
 
 ---
 
-## Sprints 6–7 — Pipeline Intelligence & Lead Scoring
+## Sprint 6 — Hunter.io Lead Generation Integration
+
+**Duration**: 2 weeks  
+**Priority**: High  
+**Team**: Backend (winning-backend proxy) + Frontend (CRM UI)  
+**External API**: Hunter.io  
+**Prerequisite**: Hunter.io account + `HUNTER_API_KEY` in winning-backend env
+
+### Epic: Proactive outbound lead generation via Hunter.io inside Business Buddy CRM
+
+---
+
+#### Story 6.1 — Backend: Hunter.io Proxy Endpoints
+**Points**: 3  
+**Owner**: Backend  
+**Branch**: `feat/[issue]-hunter-integration`
+
+**As a** developer,  
+**I want** winning-backend to proxy all Hunter.io API calls,  
+**so that** the API key is never exposed in the frontend bundle.
+
+**Acceptance Criteria**:
+- [ ] `GET /api/v1/internal/hunter/domain-search?domain={domain}` — proxies Hunter domain search
+- [ ] `GET /api/v1/internal/hunter/email-finder?first_name={}&last_name={}&domain={}` — proxies email finder
+- [ ] `GET /api/v1/internal/hunter/email-verifier?email={}` — proxies email verifier
+- [ ] All three endpoints require CRM auth (not public)
+- [ ] `HUNTER_API_KEY` loaded from env — never hardcoded
+- [ ] Hunter 4xx/5xx errors returned as structured JSON (not raw Hunter response)
+- [ ] Rate limit exceeded returns `429` with `"Hunter.io quota exceeded"` message
+
+**Technical Notes**:
+- Hunter.io base URL: `https://api.hunter.io/v2`
+- Domain search returns up to 100 emails per request
+- Confidence score 0–100 included per email
+
+---
+
+#### Story 6.2 — Backend: Bulk Import Contacts from Domain Search
+**Points**: 3  
+**Owner**: Backend  
+**Branch**: `feat/[issue]-hunter-integration` (same PR)
+
+**As a** CRM admin,  
+**I want** Hunter.io domain search results to be bulk-imported into the CRM,  
+**so that** the sales team has a pipeline of leads from target companies immediately.
+
+**Acceptance Criteria**:
+- [ ] `POST /api/v1/internal/hunter/import-domain` endpoint
+- [ ] Accepts `{ domain, assign_to }` body
+- [ ] For each Hunter result:
+  - Dedup check by email — skip if contact already exists
+  - Insert new contact with `pipeline_stage = "new"`, `created_by = "hunter"`, `tags = ["hunter-lead", "domain:{domain}"]`
+  - Store `email_confidence` score on contact
+- [ ] Returns `{ imported: N, skipped: N, errors: N }` summary
+- [ ] ZeroDB event fired: type `hunter_domain_import`, payload includes domain + counts
+- [ ] Errors logged per contact — batch does not fail on single bad record
+
+---
+
+#### Story 6.3 — Frontend: "Find Leads" Panel (Domain Search)
+**Points**: 3  
+**Owner**: Frontend
+
+**As a** CRM admin,  
+**I want** a "Find Leads" panel in the CRM where I can search a company domain and import all discovered contacts,  
+**so that** I can fill the pipeline with outbound leads without leaving the CRM.
+
+**Acceptance Criteria**:
+- [ ] "Find Leads" item in CRM sidebar (admin-only, hidden for regular users)
+- [ ] Domain input field with search button
+- [ ] Results preview table: name, email, title, confidence score — before import
+- [ ] "Import All" and "Import Selected" (checkbox) actions
+- [ ] Post-import toast: `"Imported 12 contacts, 3 already existed"`
+- [ ] Imported contacts immediately visible in pipeline under `new` stage
+- [ ] Loading state while fetching from Hunter.io proxy
+
+---
+
+#### Story 6.4 — Frontend: Email Finder on "Add Contact" Form
+**Points**: 2  
+**Owner**: Frontend
+
+**As a** CRM user,  
+**I want** to look up a person's email address by name and company while adding a contact,  
+**so that** I don't have to guess or manually search for it externally.
+
+**Acceptance Criteria**:
+- [ ] "Find Email" button on the Add Contact form (next to email field)
+- [ ] Requires first name, last name, and company domain to be filled first
+- [ ] Calls Hunter.io email finder via backend proxy
+- [ ] Auto-fills email field with result
+- [ ] Shows confidence score next to the email: `"Found: 87% confidence"`
+- [ ] Graceful message if no result: `"No email found for this person"`
+
+---
+
+#### Story 6.5 — Frontend: Email Verification on Contact Detail
+**Points**: 1  
+**Owner**: Frontend
+
+**As a** CRM user,  
+**I want** to verify any contact's email address before I send outreach,  
+**so that** I don't waste quota emailing bounced addresses.
+
+**Acceptance Criteria**:
+- [ ] "Verify Email" button on contact detail page (next to email field)
+- [ ] Calls Hunter.io verifier via backend proxy
+- [ ] Result stored on contact: `email_verified: true/false`, `email_deliverability: "good|risky|invalid"`
+- [ ] Status badge shown on contact: green = good, yellow = risky, red = invalid
+- [ ] Activity log entry: `"Email verified via Hunter.io: deliverability=good"`
+- [ ] Button disabled if email already verified within last 30 days
+
+---
+
+#### Story 6.6 — Frontend: Hunter.io Credit Usage in Settings
+**Points**: 1  
+**Owner**: Frontend
+
+**As a** CRM admin,  
+**I want** to see how many Hunter.io credits remain this month,  
+**so that** I don't hit the quota unexpectedly mid-campaign.
+
+**Acceptance Criteria**:
+- [ ] Hunter.io usage widget on CRM settings page (admin only)
+- [ ] Shows: searches used / monthly limit, verifications used / monthly limit
+- [ ] Warning state at 80% usage: `"You've used 80% of your Hunter.io quota"`
+- [ ] Data fetched from `GET /api/v1/internal/hunter/account` proxy endpoint
+
+---
+
+**Sprint 6 Total**: 13 points
+
+---
+
+## Sprints 7–8 — Pipeline Intelligence & Lead Scoring
 
 **Duration**: 4 weeks  
 **Priority**: Future  
@@ -426,11 +561,11 @@
 
 ---
 
-**Sprints 6–7 Total**: 13 points
+**Sprints 7–8 Total**: 13 points
 
 ---
 
-## Sprint 8 — Analytics Dashboard
+## Sprint 9 — Analytics Dashboard
 
 **Duration**: 2 weeks  
 **Priority**: Future  
@@ -440,7 +575,7 @@
 
 ---
 
-#### Story 8.1 — Dashboard: Pipeline Velocity Metrics
+#### Story 9.1 — Dashboard: Pipeline Velocity Metrics
 **Points**: 3  
 **Owner**: Frontend
 
@@ -451,18 +586,19 @@
 
 ---
 
-#### Story 8.2 — Dashboard: Source Breakdown
+#### Story 9.2 — Dashboard: Source Breakdown
 **Points**: 2  
 **Owner**: Frontend
 
 **Acceptance Criteria**:
-- [ ] Website leads vs manual entries (filter by `tags: ["website-lead"]`)
-- [ ] Displayed as percentage + count
+- [ ] Lead source breakdown: website form vs Hunter.io import vs manual entry
+- [ ] Filter by tag: `website-lead`, `hunter-lead`
+- [ ] Displayed as percentage + count per source
 - [ ] Filterable by date range
 
 ---
 
-#### Story 8.3 — Dashboard: Task & Overdue Summary
+#### Story 9.3 — Dashboard: Task & Overdue Summary
 **Points**: 2  
 **Owner**: Frontend
 
@@ -473,7 +609,7 @@
 
 ---
 
-#### Story 8.4 — Dashboard: Activity Heatmap
+#### Story 9.4 — Dashboard: Activity Heatmap
 **Points**: 1  
 **Owner**: Frontend
 
@@ -483,7 +619,7 @@
 
 ---
 
-**Sprint 8 Total**: 8 points
+**Sprint 9 Total**: 8 points
 
 ---
 
@@ -495,9 +631,10 @@
 | Sprint 2 | Semantic Search | 13 | Ready for development |
 | Sprint 3 | File Attachments | 8 | Ready for development |
 | Sprint 4–5 | AI Contact Summaries | 13 | Requires Sprint 1–2 |
-| Sprint 6–7 | Pipeline Intelligence | 13 | Requires Sprint 2 |
-| Sprint 8 | Analytics Dashboard | 8 | Requires Sprint 1 |
-| **Total** | | **68** | |
+| Sprint 6 | Hunter.io Lead Generation | 13 | Requires Hunter.io API key |
+| Sprint 7–8 | Pipeline Intelligence | 13 | Requires Sprint 2 + Sprint 6 |
+| Sprint 9 | Analytics Dashboard | 8 | Requires Sprint 1 + Sprint 6 |
+| **Total** | | **81** | |
 
 ---
 

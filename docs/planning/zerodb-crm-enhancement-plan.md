@@ -45,6 +45,7 @@ This plan outlines how to leverage ZeroDB's full feature set (Semantic Search, V
 | Stats are counts only | No pipeline velocity, no conversion rates |
 | No workflow automation | Stage changes require manual follow-up tasks |
 | No duplicate detection | CSV imports can create duplicate contacts |
+| No proactive lead generation | Sales team must manually source leads outside the CRM |
 
 ---
 
@@ -210,7 +211,93 @@ zerodb_get_context({ query: "relationship status with John Smith contact_id: abc
 
 ---
 
-### Initiative 5 — Pipeline Intelligence & Lead Scoring
+### Initiative 5 — Hunter.io Lead Generation Integration
+**Priority**: 🔴 High  
+**External API**: Hunter.io (Domain Search, Email Finder, Email Verifier)  
+**ZeroDB APIs**: NoSQL Tables, Events, Embeddings  
+**Effort**: 2 sprints (4 weeks)
+
+#### Problem
+The CRM is reactive — contacts only enter when someone submits the website form or a staff member adds them manually. The sales team has no way to proactively find and qualify leads from target companies or industries without leaving the CRM.
+
+#### Solution
+Integrate Hunter.io's API to give the sales team three outbound lead generation capabilities directly inside the CRM:
+
+1. **Domain Search** — Enter a company domain (e.g. `acme.com`) and pull all publicly available professional emails from that organization into the CRM as new leads
+2. **Email Finder** — Look up the most likely email address for a named person at a company
+3. **Email Verification** — Verify any email address before outreach to reduce bounce rate
+
+All discovered leads are auto-tagged `hunter-lead`, deduped against existing contacts, and immediately available in the pipeline.
+
+#### Architecture
+```
+CRM User opens "Find Leads" panel
+    ↓
+Hunter.io Domain Search
+POST https://api.hunter.io/v2/domain-search?domain=acme.com&api_key={key}
+    ↓
+For each result:
+    ├── Dedup check → CRM ZeroDB contacts table (match on email)
+    ├── Insert new contact row (if not exists)
+    │     pipeline_stage = "new"
+    │     created_by = "hunter"
+    │     tags = ["hunter-lead", "domain:{domain}"]
+    ├── Generate embedding → ZeroDB vector store
+    └── Fire ZeroDB event (type: hunter_lead_imported)
+
+CRM User opens contact detail → "Verify Email" button
+    ↓
+Hunter.io Email Verifier
+GET https://api.hunter.io/v2/email-verifier?email={email}&api_key={key}
+    ↓
+Result stored on contact: email_verified: true/false, deliverability: "good|risky|invalid"
+Activity log entry: "Email verified via Hunter.io: deliverability=good"
+```
+
+#### Data Mapping
+| Hunter.io Field | CRM Field | Notes |
+|----------------|-----------|-------|
+| `first_name` | `first_name` | |
+| `last_name` | `last_name` | |
+| `email` | `email` | Dedup key |
+| `position` | `title` | Job title |
+| `organization` | `company` | |
+| `linkedin_url` | `linkedin_url` | |
+| `phone_number` | `phone` | |
+| — | `pipeline_stage` | Auto-set to `new` |
+| — | `created_by` | Auto-set to `hunter` |
+| — | `tags` | `["hunter-lead", "domain:{domain}"]` |
+| `confidence` | `email_confidence` | Hunter's confidence score 0–100 |
+| — | `email_verified` | Set after verification step |
+
+#### Hunter.io API Limits (free tier)
+| Plan | Domain Searches/mo | Email Finders/mo | Verifications/mo |
+|------|-------------------|-----------------|-----------------|
+| Free | 25 | 25 | 50 |
+| Starter ($34/mo) | 500 | 500 | 1,000 |
+| Growth ($104/mo) | 2,500 | 2,500 | 5,000 |
+
+**Recommendation**: Start on Starter plan. Volume justifies Growth once pipeline proves ROI.
+
+#### Acceptance Criteria
+- [ ] "Find Leads" panel accessible from CRM sidebar (admin only)
+- [ ] Domain search imports up to 100 contacts per search
+- [ ] Dedup: existing contacts are skipped (not duplicated), count reported
+- [ ] All imported contacts tagged `hunter-lead` and filterable
+- [ ] Email Finder available on "Add Contact" form (lookup by name + company)
+- [ ] Email Verifier available on any contact with an email address
+- [ ] Verification result (deliverability score) stored on contact and shown in UI
+- [ ] ZeroDB event fired per batch import for audit trail
+- [ ] API key stored in env var — never exposed client-side
+- [ ] Rate limit handling: graceful error if Hunter quota exceeded
+- [ ] Hunter.io credits consumed shown in CRM settings page
+
+#### Security Note
+Hunter.io API key must be stored server-side (winning-backend env var `HUNTER_API_KEY`). All Hunter.io calls are proxied through a winning-backend endpoint — the key is never in the frontend bundle.
+
+---
+
+### Initiative 6 — Pipeline Intelligence & Lead Scoring
 **Priority**: 🟢 Future  
 **ZeroDB APIs**: Quantum Hybrid Search, Vector Search  
 **Effort**: 2 sprints (4 weeks)
@@ -245,7 +332,7 @@ zerodb_quantum_hybrid_search({
 
 ---
 
-### Initiative 6 — Analytics Dashboard
+### Initiative 7 — Analytics Dashboard
 **Priority**: 🟢 Future  
 **ZeroDB APIs**: NoSQL Tables queries, Events  
 **Effort**: 2 sprints (4 weeks)
@@ -326,6 +413,9 @@ Update the form `action` or JS `fetch` target to point at the new endpoint. No o
 | Semantic search UI in CRM frontend | Frontend team | Not started |
 | File storage UI in CRM frontend | Frontend team | Not started |
 | Memory API integration | Frontend + Backend | Not started |
+| Hunter.io account + API key | Nique / DevOps | Not started |
+| `HUNTER_API_KEY` in winning-backend env | DevOps | Not started |
+| Hunter.io proxy endpoints on winning-backend | Backend team | Not started |
 
 ---
 
@@ -338,6 +428,8 @@ Update the form `action` or JS `fetch` target to point at the new endpoint. No o
 | Time to context on contact open | 2–3 min | <30 sec |
 | Contacts with file attachments | 0% | >40% |
 | Pipeline leads scored | 0% | 100% |
+| Outbound leads generated via Hunter.io | 0/mo | >200/mo |
+| Email bounce rate on outreach | Unknown | <5% (verified contacts) |
 
 ---
 
@@ -349,6 +441,9 @@ Update the form `action` or JS `fetch` target to point at the new endpoint. No o
 | Contact form endpoint abuse (spam) | Medium | Rate limit by IP, honeypot field, CAPTCHA |
 | Duplicate contacts from form submissions | Medium | Dedup by email before insert; update if exists |
 | File storage costs exceed budget | Low | 2GB free tier; enforce 10MB limit per file |
+| Hunter.io quota exhausted | Medium | Track credits in settings UI; alert at 80% usage |
+| Hunter.io data quality (stale emails) | Medium | Always verify before outreach; store deliverability score |
+| CAN-SPAM / GDPR compliance on outbound | Medium | Tag all Hunter leads; provide unsubscribe in all outreach |
 
 ---
 
