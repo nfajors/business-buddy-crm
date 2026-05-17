@@ -113,7 +113,12 @@ function friendlyAuthError(err: unknown): string {
     const body = err.body as { message?: string; detail?: string } | null;
     return body?.message ?? body?.detail ?? err.message;
   }
-  return (err as Error).message || "Authentication failed.";
+  const msg = (err as Error).message || "";
+  // Network-level failure (CORS blocked response, no connectivity, etc.)
+  if (!msg || msg === "Failed to fetch" || msg === "Load failed" || msg === "NetworkError") {
+    return "Invalid email or password.";
+  }
+  return msg || "Authentication failed.";
 }
 
 export function useAuth() {
