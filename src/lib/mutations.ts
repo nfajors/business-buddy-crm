@@ -260,13 +260,25 @@ export interface BulkImportResult {
   errors: { rowIndex: number; reason: string }[];
 }
 
-// Concurrency cap for parallel single-row inserts. Tuned for ZeroDB latency:
-// high enough to push 3k rows in <2min, low enough to avoid rate-limit spikes.
-const IMPORT_CONCURRENCY = 8;
+// Concurrency for parallel single-row inserts. Kept modest to avoid OPTIONS
+// preflight bursts that some edge proxies rate-limit (a burst rejection there
+// surfaces as "Failed to fetch" on every row).
+const IMPORT_CONCURRENCY = 4;
 const MAX_REPORTED_ERRORS = 50;
+// Retry transient failures (network blips, 5xx, 429). Real validation errors
+// (4xx other than 408/425/429) are not retried.
+const RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 400;
 
 function describeInsertError(err: unknown): string {
   if (err instanceof ZeroDBError) {
+    if (err.status === 0) {
+      const detail =
+        err.body && typeof err.body === "object" && "detail" in err.body
+          ? String((err.body as { detail: unknown }).detail)
+          : err.message;
+      return `Network/CORS failure: ${detail}`;
+    }
     const bodyText =
       typeof err.body === "string"
         ? err.body
@@ -280,28 +292,80 @@ function describeInsertError(err: unknown): string {
   return String(err);
 }
 
+function isRetryable(err: unknown): boolean {
+  if (err instanceof ZeroDBError) {
+    // status 0 = fetch threw (network/CORS); 408/425/429/5xx = transient
+    if (err.status === 0) return true;
+    if (err.status === 408 || err.status === 425 || err.status === 429) return true;
+    if (err.status >= 500 && err.status < 600) return true;
+    return false;
+  }
+  return false;
+}
+
+async function insertWithRetry(record: ContactInsert): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+    try {
+      await zerodb.tables.insert("contacts", record);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryable(err) || attempt === RETRY_ATTEMPTS - 1) break;
+      const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastErr;
+}
+
 export function useBulkImportContacts() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (rows: Partial<ContactInsert>[]): Promise<BulkImportResult> => {
       if (rows.length === 0) return { inserted: 0, failed: 0, firstError: null, errors: [] };
 
+      // Fail fast if there's no session — the API will reject every row, and
+      // the browser surfaces those CORS-less 401s as opaque "Failed to fetch".
+      const session = zerodb.getSession();
+      if (!session?.token) {
+        throw new Error("Not signed in — please log in again before importing.");
+      }
+      if (session.expiresAt && session.expiresAt < Date.now()) {
+        throw new Error("Session expired — please log in again before importing.");
+      }
+
       // Per-row inserts with a concurrency cap. The /rows/bulk endpoint is not
       // reliably available on ZeroDB; sequencing single inserts (which work
-      // for manual contact create) is the resilient path. ~8 in flight keeps
-      // total time reasonable for thousands of rows without hammering the API.
+      // for manual contact create) is the resilient path.
       const stamped = rows.map(stampContactForInsert);
+
+      // Pre-flight: insert the first row alone before launching the swarm.
+      // If row 1 fails, all 3k will fail the same way — surface the actual
+      // reason now instead of burning through every row to repeat it.
       let inserted = 0;
       let failed = 0;
       let firstError: string | null = null;
       const errors: BulkImportResult["errors"] = [];
 
-      let cursor = 0;
+      try {
+        await insertWithRetry(stamped[0]);
+        inserted++;
+      } catch (err) {
+        const reason = describeInsertError(err);
+        throw new Error(
+          `Import aborted — first row failed: ${reason}. ` +
+            `No rows were imported. Check the browser console for details, ` +
+            `verify your session is still valid, and confirm the CSV columns match.`,
+        );
+      }
+
+      let cursor = 1;
       async function worker() {
         while (cursor < stamped.length) {
           const idx = cursor++;
           try {
-            await zerodb.tables.insert("contacts", stamped[idx]);
+            await insertWithRetry(stamped[idx]);
             inserted++;
           } catch (err) {
             failed++;
@@ -315,7 +379,7 @@ export function useBulkImportContacts() {
       }
 
       const workers = Array.from(
-        { length: Math.min(IMPORT_CONCURRENCY, stamped.length) },
+        { length: Math.min(IMPORT_CONCURRENCY, stamped.length - 1) },
         () => worker(),
       );
       await Promise.all(workers);

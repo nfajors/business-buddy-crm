@@ -99,7 +99,21 @@ class ZeroDBClient {
     }
 
     const base = init.tableApi ? TABLE_API_URL : API_URL;
-    const res = await fetch(`${base}${path}`, { ...init, headers });
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, { ...init, headers });
+    } catch (err) {
+      // fetch() itself throws TypeError ("Failed to fetch") for network failures,
+      // CORS preflight rejections, DNS errors, or aborted connections. The bare
+      // message is useless in error reports; surface it as a structured error so
+      // callers can distinguish it from HTTP responses and retry appropriately.
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new ZeroDBError(
+        `[zerodb] network failure on ${path}: ${detail}`,
+        0,
+        { error: "network_or_cors_failure", detail, path },
+      );
+    }
     const text = await res.text();
     const body = text ? safeJsonParse(text) : null;
 
