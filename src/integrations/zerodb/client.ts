@@ -16,10 +16,11 @@ import type {
 const STORAGE_KEY = "zerodb.session";
 const REFRESH_INTERVAL_MS = 25 * 60 * 1000;
 
-// Base URL for auth/vector endpoints: https://api.ainative.studio/v1
-// Table CRUD endpoints live under /api/v1/... (different prefix)
+// Auth/vector endpoints: https://api.ainative.studio/v1
+// Table CRUD is proxied through winning-backend to avoid ZeroDB CORS restrictions.
+// Proxy URL: https://api.winning.careers/api/v1/crm/tables/{table}/rows
 const API_URL = import.meta.env.VITE_ZERODB_API_URL ?? "https://api.ainative.studio/v1";
-const TABLE_API_URL = API_URL.replace(/\/v1$/, "/api/v1");
+const TABLE_API_URL = import.meta.env.VITE_CRM_PROXY_URL ?? "https://api.winning.careers/api/v1/crm";
 const PROJECT_ID = import.meta.env.VITE_ZERODB_PROJECT_ID ?? "";
 const API_KEY = import.meta.env.VITE_ZERODB_API_KEY ?? "";
 
@@ -102,7 +103,14 @@ class ZeroDBClient {
     // requests, surfacing as the opaque "Failed to fetch" on bulk imports.
     // See issue #18. `skipAuth` is kept as a parameter for the dead
     // AuthAPI endpoints; it has no effect now and can be cleaned up later.
-    if (API_KEY) headers.set("X-API-Key", API_KEY);
+    if (API_KEY) {
+      if (init.tableApi) {
+        // Proxy expects X-CRM-Token; API key is injected server-side by the proxy.
+        headers.set("X-CRM-Token", API_KEY);
+      } else {
+        headers.set("X-API-Key", API_KEY);
+      }
+    }
 
     const base = init.tableApi ? TABLE_API_URL : API_URL;
     let res: Response;
@@ -180,9 +188,9 @@ class AuthAPI {
 class TablesAPI {
   constructor(private client: ZeroDBClient) {}
 
-  // Correct path per ZeroDB docs: /api/v1/projects/{id}/database/tables/{name}
+  // Proxy path: /tables/{name} (winning-backend injects project ID server-side)
   private base(table: TableName): string {
-    return `/projects/${this.client.projectId}/database/tables/${table}`;
+    return `/tables/${table}`;
   }
 
   async query<T extends TableName>(
@@ -278,7 +286,7 @@ class TablesAPI {
   }
 
   async count<T extends TableName>(table: T, filter: Record<string, unknown> = {}): Promise<number> {
-    const res = await this.query(table, { filter, limit: 0 });
+    const res = await this.query(table, { filter, limit: 1 });
     return res.total;
   }
 }
