@@ -22,17 +22,36 @@ export function useDashboardStats() {
     queryKey: ["dashboard-stats"],
     queryFn: async (): Promise<DashboardStats> => {
       // Replaces the Supabase `get_dashboard_stats` RPC. Tables API has no
-      // RPC, so we fan out 5 counts and aggregate.
+      // RPC, so the real total comes from a single unfiltered count, and the
+      // per-stage breakdown fans out 5 filtered counts. Contacts have exactly
+      // one pipeline_stage, so the stage buckets partition the population —
+      // total is NOT the sum of buckets (that was the source of #22's 5× error).
       const stages: PipelineStage[] = PIPELINE_STAGES.map((s) => s.value);
-      const counts = await Promise.all(
-        stages.map((stage) => zerodb.tables.count("contacts", { pipeline_stage: stage })),
-      );
+      const [total, ...counts] = await Promise.all([
+        zerodb.tables.count("contacts", {}),
+        ...stages.map((stage) => zerodb.tables.count("contacts", { pipeline_stage: stage })),
+      ]);
+
       const byStage = {} as Record<PipelineStage, number>;
-      let total = 0;
-      stages.forEach((stage, i) => {
-        byStage[stage] = counts[i];
-        total += counts[i];
-      });
+      // Defensive: if every per-stage count equals the unfiltered total, the
+      // upstream proxy is ignoring the `filter` param (see #23). Don't show a
+      // wildly misleading breakdown — collapse to "new" (the import default)
+      // and zero the rest. Self-heals automatically once #23 is fixed.
+      const filterIgnored =
+        total > 0 && counts.every((c) => c === total);
+      if (filterIgnored) {
+        console.warn(
+          "[dashboard-stats] proxy filter appears to be ignored (every stage count == total). " +
+            "Falling back to single-bucket display. See issue #23.",
+        );
+        stages.forEach((stage) => {
+          byStage[stage] = stage === "new" ? total : 0;
+        });
+      } else {
+        stages.forEach((stage, i) => {
+          byStage[stage] = counts[i];
+        });
+      }
       return { total, byStage };
     },
     staleTime: 30_000,
