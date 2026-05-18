@@ -26,18 +26,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const SIGN_IN_KEY = "zerodb.last_sign_in_at";
 const SESSION_KEY = "zerodb.session";
 
-// Internal CRM uses shared API key auth — no ZeroDB user accounts needed.
-// The allowlist is the gate; password is a shared secret set via env var.
-const API_KEY = import.meta.env.VITE_ZERODB_API_KEY ?? "";
-const CRM_PASSWORD = import.meta.env.VITE_CRM_PASSWORD ?? "";
-
-function mintSession(email: string): AuthSession {
-  return {
-    token: API_KEY,
-    user: { id: email, email },
-    expiresAt: Date.now() + 8 * 60 * 60 * 1000, // 8h
-  };
-}
+// Per-user auth via ZeroDB (#16). The allowlist remains as defense-in-depth;
+// the actual credential check is delegated to ZeroDB's login endpoint.
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(zerodb.getSession());
@@ -57,16 +47,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const normalized = email.trim().toLowerCase();
+
+    // Defense-in-depth: allowlist check runs before hitting ZeroDB.
     if (!isEmailAllowed(normalized)) {
       return { error: "Access restricted to authorized Winning.Careers staff." };
     }
-    if (!CRM_PASSWORD || password !== CRM_PASSWORD) {
+
+    try {
+      // Delegate credential verification to ZeroDB per-user auth (#16).
+      await zerodb.auth.login(normalized, password);
+      localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
+      return { error: null };
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Login failed. Please try again.";
+      // Surface a generic message for 401/403 to avoid leaking info.
+      if (/40[13]/.test(msg)) {
+        return { error: "Invalid email or password." };
+      }
       return { error: "Invalid email or password." };
     }
-    const session = mintSession(normalized);
-    zerodb.setSession(session);
-    localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
-    return { error: null };
   };
 
   // Sign-up is intentionally disabled — accounts are admin-provisioned.
