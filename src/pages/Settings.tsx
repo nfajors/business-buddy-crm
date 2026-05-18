@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Loader2, LogOut, Save, ShieldCheck, Upload, Trash2 } from "lucide-react";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { zerodb, ZeroDBError } from "@/integrations/zerodb/client";
+import { zerodb } from "@/integrations/zerodb/client";
 import { format } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { nowIso } from "@/lib/audit";
 import { compressAvatar } from "@/lib/image";
+import { findProfileByUserId } from "@/lib/queries";
 import { toast } from "sonner";
 
 const nameSchema = z.string().trim().min(1).max(100);
@@ -23,6 +24,7 @@ export default function Settings() {
   const qc = useQueryClient();
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [profileRowId, setProfileRowId] = useState<string | null>(null);
   const [compressing, setCompressing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -32,13 +34,14 @@ export default function Settings() {
     if (!user) return;
     (async () => {
       try {
-        const profile = await zerodb.tables.get("profiles", user.id);
-        setDisplayName(profile?.display_name ?? "");
-        setAvatarUrl(profile?.avatar_url ?? null);
-      } catch (err) {
-        if (!(err instanceof ZeroDBError) || (err.status !== 404 && err.status !== 422)) {
-          toast.error("Could not load profile");
+        const profile = await findProfileByUserId(user.id);
+        if (profile) {
+          setProfileRowId(profile.id);
+          setDisplayName(profile.display_name ?? "");
+          setAvatarUrl(profile.avatar_url ?? null);
         }
+      } catch {
+        toast.error("Could not load profile");
       } finally {
         setLoading(false);
       }
@@ -65,34 +68,20 @@ export default function Settings() {
     if (!parsed.success) { toast.error("Display name is required (max 100 chars)"); return; }
     setSavingProfile(true);
     try {
-      const updateBody = {
+      const body = {
+        user_id: user.id,
         display_name: parsed.data,
         avatar_url: avatarUrl ?? "",
         updated_at: nowIso(),
       };
-      try {
-        // profiles schema only has display_name / avatar_url / created_at /
-        // updated_at — stampForUpdate's `updated_by` triggers a 422 on the
-        // proxy. Send a clean body that matches the bootstrap schema.
-        await zerodb.tables.update("profiles", user.id, updateBody);
-      } catch (err) {
-        // First-time profile write — create instead of update. Treat 404
-        // (not found) and 422 (unprocessable, e.g. proxy treats PUT-on-
-        // missing-row as bad-body) the same way.
-        if (
-          err instanceof ZeroDBError &&
-          (err.status === 404 || err.status === 422)
-        ) {
-          await zerodb.tables.insert("profiles", {
-            id: user.id,
-            display_name: parsed.data,
-            avatar_url: avatarUrl ?? "",
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          });
-        } else {
-          throw err;
-        }
+      if (profileRowId) {
+        await zerodb.tables.update("profiles", profileRowId, body);
+      } else {
+        const created = await zerodb.tables.insert("profiles", {
+          ...body,
+          created_at: nowIso(),
+        });
+        setProfileRowId(created.id);
       }
       qc.invalidateQueries({ queryKey: ["profile", user.id] });
       toast.success("Profile updated");

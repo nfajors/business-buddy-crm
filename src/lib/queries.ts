@@ -284,13 +284,28 @@ export function useTasks(args: TasksQueryArgs = {}) {
 
 // ---------- Profile ----------
 
+// ZeroDB assigns each row its own UUID row_id; we can't use the user's
+// email as a primary key. Instead, profiles carry a `user_id` field and
+// we look the row up by scanning. The proxy still ignores the `filter`
+// param (#23), so we paginate a small page and match client-side.
+// The profiles table only ever has one row per allowlisted user, so a
+// single 200-row page is plenty.
+export async function findProfileByUserId(userId: string): Promise<Profile | null> {
+  const res = await zerodb.tables.query("profiles", {
+    limit: 200,
+    sort: [{ field: "updated_at", direction: "desc" }],
+  });
+  const match = res.records.find((r) => r.user_id === userId);
+  return (match as Profile | undefined) ?? null;
+}
+
 export function useProfile(userId: string | undefined) {
   return useQuery({
     queryKey: ["profile", userId],
     enabled: !!userId,
     queryFn: async (): Promise<Profile | null> => {
       try {
-        return await zerodb.tables.get("profiles", userId!);
+        return await findProfileByUserId(userId!);
       } catch (err) {
         if (err instanceof ZeroDBError && (err.status === 404 || err.status === 422)) return null;
         throw err;

@@ -115,6 +115,7 @@ export type TaskUpdate = Partial<Omit<Task, "id">>;
 
 export interface Profile {
   id: string;
+  user_id: string | null;
   display_name: string | null;
   avatar_url: string | null;
   created_at: string;
