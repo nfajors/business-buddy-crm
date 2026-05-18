@@ -21,42 +21,46 @@ export function useDashboardStats() {
   return useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async (): Promise<DashboardStats> => {
-      // Replaces the Supabase `get_dashboard_stats` RPC. Tables API has no
-      // RPC, so the real total comes from a single unfiltered count, and the
-      // per-stage breakdown fans out 5 filtered counts. Contacts have exactly
-      // one pipeline_stage, so the stage buckets partition the population —
-      // total is NOT the sum of buckets (that was the source of #22's 5× error).
+      // Per-stage counts via filtered queries are unreliable while the
+      // winning-backend proxy ignores the `filter` query param (#23).
+      // Workaround: fetch the contacts list once (unfiltered), partition
+      // by pipeline_stage client-side. `total` comes from the response's
+      // total field which is the unfiltered DB count (this part works).
+      //
+      // Trade-off: pulls up to STATS_FETCH_CAP rows over the wire on every
+      // dashboard refresh. Acceptable while the DB is in the low thousands.
+      // Once #23 lands, this can revert to fanned-out per-stage counts.
       const stages: PipelineStage[] = PIPELINE_STAGES.map((s) => s.value);
-      const [total, ...counts] = await Promise.all([
-        zerodb.tables.count("contacts", {}),
-        ...stages.map((stage) => zerodb.tables.count("contacts", { pipeline_stage: stage })),
-      ]);
+      const res = await zerodb.tables.query("contacts", { limit: STATS_FETCH_CAP });
 
       const byStage = {} as Record<PipelineStage, number>;
-      // Defensive: if every per-stage count equals the unfiltered total, the
-      // upstream proxy is ignoring the `filter` param (see #23). Don't show a
-      // wildly misleading breakdown — collapse to "new" (the import default)
-      // and zero the rest. Self-heals automatically once #23 is fixed.
-      const filterIgnored =
-        total > 0 && counts.every((c) => c === total);
-      if (filterIgnored) {
-        console.warn(
-          "[dashboard-stats] proxy filter appears to be ignored (every stage count == total). " +
-            "Falling back to single-bucket display. See issue #23.",
-        );
-        stages.forEach((stage) => {
-          byStage[stage] = stage === "new" ? total : 0;
-        });
-      } else {
-        stages.forEach((stage, i) => {
-          byStage[stage] = counts[i];
-        });
+      stages.forEach((stage) => { byStage[stage] = 0; });
+      for (const row of res.records) {
+        const stage = (row.pipeline_stage ?? "new") as PipelineStage;
+        if (stage in byStage) byStage[stage]++;
       }
-      return { total, byStage };
+
+      if (res.total > STATS_FETCH_CAP) {
+        // We only counted the first page; surface honestly so the math is
+        // explainable. The stage breakdown is from the sampled rows; the
+        // total card uses the true DB count.
+        console.warn(
+          `[dashboard-stats] DB has ${res.total} contacts but only the first ` +
+            `${STATS_FETCH_CAP} were sampled for the per-stage breakdown. ` +
+            `Per-stage cards are approximate. See issue #23.`,
+        );
+      }
+
+      return { total: res.total, byStage };
     },
     staleTime: 30_000,
   });
 }
+
+// Max rows pulled into the dashboard's client-side stage partition.
+// Bumped up to whatever the DB realistically holds; revisit if the table
+// crosses ~10k rows.
+const STATS_FETCH_CAP = 5000;
 
 export function useRecentActivities(limit = 8) {
   return useQuery({
@@ -153,25 +157,34 @@ export function usePipeline() {
   return useQuery({
     queryKey: ["pipeline"],
     queryFn: async (): Promise<Record<PipelineStage, PipelineCard[]>> => {
+      // Same proxy-filter workaround as useDashboardStats (#23). Pull one
+      // unfiltered batch sorted by updated_at desc, then partition into
+      // stage columns client-side, capping each at PIPELINE_CAP. This is
+      // honest regardless of whether the proxy filters records by stage.
       const stages = PIPELINE_STAGES.map((s) => s.value);
-      const results = await Promise.all(
-        stages.map((stage) =>
-          zerodb.tables.query("contacts", {
-            filter: { pipeline_stage: stage },
-            sort: [{ field: "updated_at", direction: "desc" }],
-            limit: PIPELINE_CAP,
-          }),
-        ),
-      );
-      const map = {} as Record<PipelineStage, PipelineCard[]>;
-      stages.forEach((stage, i) => {
-        map[stage] = results[i].records as PipelineCard[];
+      const res = await zerodb.tables.query("contacts", {
+        sort: [{ field: "updated_at", direction: "desc" }],
+        limit: PIPELINE_FETCH_CAP,
       });
+      const map = {} as Record<PipelineStage, PipelineCard[]>;
+      stages.forEach((stage) => { map[stage] = []; });
+      for (const row of res.records) {
+        const stage = (row.pipeline_stage ?? "new") as PipelineStage;
+        if (map[stage] && map[stage].length < PIPELINE_CAP) {
+          map[stage].push(row as PipelineCard);
+        }
+      }
       return map;
     },
     staleTime: 15_000,
   });
 }
+
+// Pool we partition into per-stage columns. Big enough that each column
+// can plausibly fill to PIPELINE_CAP (100) even when stage distribution
+// is uneven. The Tables API is paginated; if the DB grows beyond this,
+// switch back to per-stage filtered queries once proxy issue #23 lands.
+const PIPELINE_FETCH_CAP = 2000;
 
 export const PIPELINE_COLUMN_CAP = PIPELINE_CAP;
 
