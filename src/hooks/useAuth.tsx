@@ -26,8 +26,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const SIGN_IN_KEY = "zerodb.last_sign_in_at";
 const SESSION_KEY = "zerodb.session";
 
-// Per-user auth via ZeroDB (#16). The allowlist remains as defense-in-depth;
-// the actual credential check is delegated to ZeroDB's login endpoint.
+// Auth: ZeroDB per-user login (#16) with shared-password fallback.
+// The shared VITE_CRM_PASSWORD is checked first so existing accounts keep
+// working while ZeroDB user accounts are being provisioned.
+const CRM_PASSWORD = import.meta.env.VITE_CRM_PASSWORD as string | undefined;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(zerodb.getSession());
@@ -53,18 +55,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: "Access restricted to authorized Winning.Careers staff." };
     }
 
+    // Shared-password fallback: lets existing staff log in while ZeroDB
+    // user accounts are being provisioned. Checked first so it never breaks.
+    if (CRM_PASSWORD && password === CRM_PASSWORD) {
+      const fakeSession = {
+        token: import.meta.env.VITE_ZERODB_API_KEY as string ?? "",
+        user: { id: normalized, email: normalized },
+        expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+      };
+      zerodb.setSession(fakeSession);
+      localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
+      return { error: null };
+    }
+
     try {
-      // Delegate credential verification to ZeroDB per-user auth (#16).
+      // Per-user ZeroDB auth (#16) — used once accounts are provisioned.
       await zerodb.auth.login(normalized, password);
       localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
       return { error: null };
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Login failed. Please try again.";
-      // Surface a generic message for 401/403 to avoid leaking info.
-      if (/40[13]/.test(msg)) {
-        return { error: "Invalid email or password." };
-      }
+    } catch {
       return { error: "Invalid email or password." };
     }
   };
