@@ -23,44 +23,52 @@ export function useDashboardStats() {
     queryFn: async (): Promise<DashboardStats> => {
       // Per-stage counts via filtered queries are unreliable while the
       // winning-backend proxy ignores the `filter` query param (#23).
-      // Workaround: fetch the contacts list once (unfiltered), partition
-      // by pipeline_stage client-side. `total` comes from the response's
-      // total field which is the unfiltered DB count (this part works).
+      // Workaround: get the real total from count() (limit=1, which the
+      // proxy handles fine), then paginate the contacts list and
+      // partition by pipeline_stage client-side. A single large limit
+      // (e.g. 5000) gets dropped silently by the proxy, so we page in
+      // safe-sized chunks.
       //
-      // Trade-off: pulls up to STATS_FETCH_CAP rows over the wire on every
-      // dashboard refresh. Acceptable while the DB is in the low thousands.
-      // Once #23 lands, this can revert to fanned-out per-stage counts.
+      // Once #23 lands, this can revert to a fan-out of per-stage counts.
       const stages: PipelineStage[] = PIPELINE_STAGES.map((s) => s.value);
-      const res = await zerodb.tables.query("contacts", { limit: STATS_FETCH_CAP });
-
       const byStage = {} as Record<PipelineStage, number>;
       stages.forEach((stage) => { byStage[stage] = 0; });
-      for (const row of res.records) {
-        const stage = (row.pipeline_stage ?? "new") as PipelineStage;
-        if (stage in byStage) byStage[stage]++;
+
+      const total = await zerodb.tables.count("contacts", {});
+
+      let scanned = 0;
+      for (let page = 0; page < STATS_MAX_PAGES; page++) {
+        const res = await zerodb.tables.query("contacts", {
+          limit: STATS_PAGE_SIZE,
+          offset: page * STATS_PAGE_SIZE,
+        });
+        if (res.records.length === 0) break;
+        for (const row of res.records) {
+          const stage = (row.pipeline_stage ?? "new") as PipelineStage;
+          if (stage in byStage) byStage[stage]++;
+        }
+        scanned += res.records.length;
+        if (res.records.length < STATS_PAGE_SIZE) break;
       }
 
-      if (res.total > STATS_FETCH_CAP) {
-        // We only counted the first page; surface honestly so the math is
-        // explainable. The stage breakdown is from the sampled rows; the
-        // total card uses the true DB count.
+      if (scanned < total) {
         console.warn(
-          `[dashboard-stats] DB has ${res.total} contacts but only the first ` +
-            `${STATS_FETCH_CAP} were sampled for the per-stage breakdown. ` +
-            `Per-stage cards are approximate. See issue #23.`,
+          `[dashboard-stats] DB has ${total} contacts but only ${scanned} ` +
+            `were scanned for the per-stage breakdown (cap = ${STATS_MAX_PAGES * STATS_PAGE_SIZE}). ` +
+            `Per-stage cards are approximate.`,
         );
       }
 
-      return { total: res.total, byStage };
+      return { total, byStage };
     },
     staleTime: 30_000,
   });
 }
 
-// Max rows pulled into the dashboard's client-side stage partition.
-// Bumped up to whatever the DB realistically holds; revisit if the table
-// crosses ~10k rows.
-const STATS_FETCH_CAP = 5000;
+// Pagination for the client-side per-stage partition. The proxy rejects
+// or silently truncates large limits, so we page in safe chunks.
+const STATS_PAGE_SIZE = 200;
+const STATS_MAX_PAGES = 50; // 10,000-row ceiling; bump if the table grows.
 
 export function useRecentActivities(limit = 8) {
   return useQuery({
@@ -157,22 +165,29 @@ export function usePipeline() {
   return useQuery({
     queryKey: ["pipeline"],
     queryFn: async (): Promise<Record<PipelineStage, PipelineCard[]>> => {
-      // Same proxy-filter workaround as useDashboardStats (#23). Pull one
-      // unfiltered batch sorted by updated_at desc, then partition into
-      // stage columns client-side, capping each at PIPELINE_CAP. This is
-      // honest regardless of whether the proxy filters records by stage.
+      // Same proxy-filter workaround as useDashboardStats (#23): paginate
+      // unfiltered contacts sorted by updated_at desc, partition into
+      // stage columns client-side, cap each at PIPELINE_CAP. Stop once
+      // every column is full or we hit the page cap.
       const stages = PIPELINE_STAGES.map((s) => s.value);
-      const res = await zerodb.tables.query("contacts", {
-        sort: [{ field: "updated_at", direction: "desc" }],
-        limit: PIPELINE_FETCH_CAP,
-      });
       const map = {} as Record<PipelineStage, PipelineCard[]>;
       stages.forEach((stage) => { map[stage] = []; });
-      for (const row of res.records) {
-        const stage = (row.pipeline_stage ?? "new") as PipelineStage;
-        if (map[stage] && map[stage].length < PIPELINE_CAP) {
-          map[stage].push(row as PipelineCard);
+
+      for (let page = 0; page < PIPELINE_MAX_PAGES; page++) {
+        const res = await zerodb.tables.query("contacts", {
+          sort: [{ field: "updated_at", direction: "desc" }],
+          limit: PIPELINE_PAGE_SIZE,
+          offset: page * PIPELINE_PAGE_SIZE,
+        });
+        if (res.records.length === 0) break;
+        for (const row of res.records) {
+          const stage = (row.pipeline_stage ?? "new") as PipelineStage;
+          if (map[stage] && map[stage].length < PIPELINE_CAP) {
+            map[stage].push(row as PipelineCard);
+          }
         }
+        if (res.records.length < PIPELINE_PAGE_SIZE) break;
+        if (stages.every((s) => map[s].length >= PIPELINE_CAP)) break;
       }
       return map;
     },
@@ -180,11 +195,8 @@ export function usePipeline() {
   });
 }
 
-// Pool we partition into per-stage columns. Big enough that each column
-// can plausibly fill to PIPELINE_CAP (100) even when stage distribution
-// is uneven. The Tables API is paginated; if the DB grows beyond this,
-// switch back to per-stage filtered queries once proxy issue #23 lands.
-const PIPELINE_FETCH_CAP = 2000;
+const PIPELINE_PAGE_SIZE = 200;
+const PIPELINE_MAX_PAGES = 25; // 5,000-row scan ceiling.
 
 export const PIPELINE_COLUMN_CAP = PIPELINE_CAP;
 

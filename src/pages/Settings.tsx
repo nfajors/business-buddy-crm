@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { stampForUpdate, nowIso } from "@/lib/audit";
+import { nowIso } from "@/lib/audit";
 import { toast } from "sonner";
 
 const nameSchema = z.string().trim().min(1).max(100);
@@ -45,10 +45,21 @@ export default function Settings() {
     setSavingProfile(true);
     try {
       try {
-        await zerodb.tables.update("profiles", user.id, stampForUpdate({ display_name: parsed.data }));
+        // profiles schema only has display_name / avatar_url / created_at /
+        // updated_at — stampForUpdate's `updated_by` triggers a 422 on the
+        // proxy. Send a clean body that matches the bootstrap schema.
+        await zerodb.tables.update("profiles", user.id, {
+          display_name: parsed.data,
+          updated_at: nowIso(),
+        });
       } catch (err) {
-        // First-time profile write — create instead of update.
-        if (err instanceof ZeroDBError && err.status === 404) {
+        // First-time profile write — create instead of update. Treat 404
+        // (not found) and 422 (unprocessable, e.g. proxy treats PUT-on-
+        // missing-row as bad-body) the same way.
+        if (
+          err instanceof ZeroDBError &&
+          (err.status === 404 || err.status === 422)
+        ) {
           await zerodb.tables.insert("profiles", {
             id: user.id,
             display_name: parsed.data,
