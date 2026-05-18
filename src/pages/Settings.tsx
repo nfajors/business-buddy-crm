@@ -68,7 +68,13 @@ export default function Settings() {
     if (!parsed.success) { toast.error("Display name is required (max 100 chars)"); return; }
     setSavingProfile(true);
     try {
+      // Write email into BOTH `id` and `user_id` inside row_data (#34).
+      // The proxy is known to drop fields not declared in the bootstrap
+      // schema; `user_id` isn't declared there, so mirroring it into `id`
+      // (which the unwrap in client.ts always preserves) keeps the row
+      // findable even if `user_id` is stripped server-side.
       const body = {
+        id: user.id,
         user_id: user.id,
         display_name: parsed.data,
         avatar_url: avatarUrl ?? "",
@@ -84,6 +90,23 @@ export default function Settings() {
         setProfileRowId(created.id);
       }
       qc.invalidateQueries({ queryKey: ["profile", user.id] });
+
+      // Read-back verify: if the row isn't findable after a save, surface
+      // a clear error instead of misleading the user with a success toast
+      // and letting them discover it on reload.
+      const verify = await findProfileByUserId(user.id);
+      if (!verify) {
+        toast.error(
+          "Profile was sent but cannot be found on read-back. Check the browser console and report this.",
+        );
+        console.error("[settings] profile save did not persist", { userId: user.id, body });
+        return;
+      }
+      // Re-sync local state from what's actually stored, in case the
+      // server normalised anything (e.g. truncated avatar_url).
+      setProfileRowId(verify.id);
+      setDisplayName(verify.display_name ?? parsed.data);
+      setAvatarUrl(verify.avatar_url ?? null);
       toast.success("Profile updated");
     } catch (err) {
       toast.error((err as Error).message || "Could not save profile");

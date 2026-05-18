@@ -113,8 +113,12 @@ const TABLES: TableSpec[] = [
   {
     name: "profiles",
     fields: [
+      // user_id mirrors session.user.id (email). The save path also writes
+      // it into `id` inside row_data as a fallback because the proxy is
+      // known to drop fields not declared here (#34).
+      { name: "user_id", type: "string" },
       { name: "display_name", type: "string" },
-      { name: "avatar_url", type: "string" },
+      { name: "avatar_url", type: "text" },
       { name: "created_at", type: "timestamp", required: true },
       { name: "updated_at", type: "timestamp", required: true },
     ],
