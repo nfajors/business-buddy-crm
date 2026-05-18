@@ -5,6 +5,7 @@ import type {
   Contact,
   Note,
   PipelineStage,
+  Profile,
   Task,
   TaskStatus,
 } from "@/integrations/zerodb/types";
@@ -278,5 +279,23 @@ export function useTasks(args: TasksQueryArgs = {}) {
       return res.records;
     },
     staleTime: 15_000,
+  });
+}
+
+// ---------- Profile ----------
+
+export function useProfile(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["profile", userId],
+    enabled: !!userId,
+    queryFn: async (): Promise<Profile | null> => {
+      try {
+        return await zerodb.tables.get("profiles", userId!);
+      } catch (err) {
+        if (err instanceof ZeroDBError && (err.status === 404 || err.status === 422)) return null;
+        throw err;
+      }
+    },
+    staleTime: 60_000,
   });
 }

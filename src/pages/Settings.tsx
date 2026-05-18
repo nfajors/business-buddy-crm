@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, LogOut, Save, ShieldCheck } from "lucide-react";
+import { Loader2, LogOut, Save, ShieldCheck, Upload, Trash2 } from "lucide-react";
 import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { zerodb, ZeroDBError } from "@/integrations/zerodb/client";
 import { format } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { nowIso } from "@/lib/audit";
+import { compressAvatar } from "@/lib/image";
 import { toast } from "sonner";
 
 const nameSchema = z.string().trim().min(1).max(100);
@@ -18,9 +20,13 @@ const nameSchema = z.string().trim().min(1).max(100);
 export default function Settings() {
   const { user, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [compressing, setCompressing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -28,8 +34,9 @@ export default function Settings() {
       try {
         const profile = await zerodb.tables.get("profiles", user.id);
         setDisplayName(profile?.display_name ?? "");
+        setAvatarUrl(profile?.avatar_url ?? null);
       } catch (err) {
-        if (!(err instanceof ZeroDBError) || err.status !== 404) {
+        if (!(err instanceof ZeroDBError) || (err.status !== 404 && err.status !== 422)) {
           toast.error("Could not load profile");
         }
       } finally {
@@ -38,20 +45,36 @@ export default function Settings() {
     })();
   }, [user]);
 
+  const onPickAvatar = async (file: File | undefined) => {
+    if (!file) return;
+    setCompressing(true);
+    try {
+      const dataUrl = await compressAvatar(file);
+      setAvatarUrl(dataUrl);
+    } catch (err) {
+      toast.error((err as Error).message || "Could not process image");
+    } finally {
+      setCompressing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const saveProfile = async () => {
     if (!user) return;
     const parsed = nameSchema.safeParse(displayName);
     if (!parsed.success) { toast.error("Display name is required (max 100 chars)"); return; }
     setSavingProfile(true);
     try {
+      const updateBody = {
+        display_name: parsed.data,
+        avatar_url: avatarUrl ?? "",
+        updated_at: nowIso(),
+      };
       try {
         // profiles schema only has display_name / avatar_url / created_at /
         // updated_at — stampForUpdate's `updated_by` triggers a 422 on the
         // proxy. Send a clean body that matches the bootstrap schema.
-        await zerodb.tables.update("profiles", user.id, {
-          display_name: parsed.data,
-          updated_at: nowIso(),
-        });
+        await zerodb.tables.update("profiles", user.id, updateBody);
       } catch (err) {
         // First-time profile write — create instead of update. Treat 404
         // (not found) and 422 (unprocessable, e.g. proxy treats PUT-on-
@@ -63,6 +86,7 @@ export default function Settings() {
           await zerodb.tables.insert("profiles", {
             id: user.id,
             display_name: parsed.data,
+            avatar_url: avatarUrl ?? "",
             created_at: nowIso(),
             updated_at: nowIso(),
           });
@@ -70,6 +94,7 @@ export default function Settings() {
           throw err;
         }
       }
+      qc.invalidateQueries({ queryKey: ["profile", user.id] });
       toast.success("Profile updated");
     } catch (err) {
       toast.error((err as Error).message || "Could not save profile");
@@ -92,6 +117,49 @@ export default function Settings() {
               <h3 className="font-bold mb-1">Profile</h3>
               <p className="text-sm text-muted-foreground mb-4">How your name appears across the workspace.</p>
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Photo</Label>
+                  <div className="flex items-center gap-4">
+                    <div className="h-20 w-20 rounded-full bg-secondary border border-border overflow-hidden flex items-center justify-center text-2xl font-bold text-muted-foreground">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+                      ) : (
+                        (displayName || user?.email || "?").trim().charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => onPickAvatar(e.target.files?.[0] ?? undefined)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={compressing}
+                      >
+                        {compressing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                        {avatarUrl ? "Replace" : "Upload"} photo
+                      </Button>
+                      {avatarUrl && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAvatarUrl(null)}
+                          disabled={compressing}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" /> Remove
+                        </Button>
+                      )}
+                      <p className="text-xs text-muted-foreground">JPG/PNG up to a few MB. Resized to 256px on save.</p>
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-1.5"><Label>Email</Label><Input value={user?.email ?? ""} disabled /></div>
                 <div className="space-y-1.5"><Label>Display name</Label><Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={100} /></div>
                 <div className="space-y-1.5">
