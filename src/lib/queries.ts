@@ -10,6 +10,7 @@ import type {
   TaskStatus,
 } from "@/integrations/zerodb/types";
 import { PIPELINE_STAGES } from "@/lib/types";
+import { buildSearchBlob } from "@/lib/audit";
 
 // ---------- Dashboard ----------
 
@@ -104,6 +105,40 @@ export type ContactsPage = {
   total: number;
 };
 
+// Contact-list pagination ceiling. Matches the existing STATS_* and
+// PIPELINE_* workarounds for the same proxy bug (#23 / #32): we scan the
+// table client-side because the ZeroDB proxy ignores `filter` and does
+// only prefix-match on `search`. Bump if the table grows past 10k.
+const CONTACTS_LIST_PAGE_SIZE = 500;
+const CONTACTS_LIST_MAX_PAGES = 20; // 10,000-row ceiling.
+
+function compareContacts(a: Contact, b: Contact, sort: ContactSort, asc: boolean): number {
+  const dir = asc ? 1 : -1;
+  const av = (a[sort] ?? "") as string;
+  const bv = (b[sort] ?? "") as string;
+  if (av < bv) return -1 * dir;
+  if (av > bv) return 1 * dir;
+  return 0;
+}
+
+function contactMatchesSearch(c: Contact, needle: string): boolean {
+  // Prefer the stored search_blob, but recompute from the row's fields if
+  // it's empty (older rows pre-#7, or any row where the trigger didn't
+  // run). Substring + case-insensitive.
+  const blob = (c.search_blob && c.search_blob.length > 0)
+    ? c.search_blob.toLowerCase()
+    : buildSearchBlob({
+        first_name: c.first_name,
+        last_name: c.last_name,
+        email: c.email,
+        company: c.company,
+        title: c.title,
+        city: c.city,
+        tags: c.tags ?? [],
+      });
+  return blob.includes(needle);
+}
+
 export function useContacts(args: ContactsQueryArgs) {
   const {
     search = "",
@@ -119,21 +154,32 @@ export function useContacts(args: ContactsQueryArgs) {
     queryKey: ["contacts", "list", { search, stage, industry, sort, ascending, page, pageSize }],
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<ContactsPage> => {
-      const filter: Record<string, unknown> = {};
-      if (stage !== "all") filter.pipeline_stage = stage;
-      if (industry !== "all") filter.industry = industry;
+      // The ZeroDB proxy ignores `filter` (#23) and only does prefix-match
+      // on `search` (#32 — "Zimmerman" never matches "scott zimmerman …").
+      // Workaround: paginate the unfiltered table, then filter/search/sort
+      // client-side. Same pattern as useDashboardStats / usePipeline.
+      const needle = search.trim().toLowerCase();
+      const all: Contact[] = [];
+      for (let p = 0; p < CONTACTS_LIST_MAX_PAGES; p++) {
+        const res = await zerodb.tables.query("contacts", {
+          limit: CONTACTS_LIST_PAGE_SIZE,
+          offset: p * CONTACTS_LIST_PAGE_SIZE,
+        });
+        if (res.records.length === 0) break;
+        all.push(...res.records);
+        if (res.records.length < CONTACTS_LIST_PAGE_SIZE) break;
+      }
 
-      const s = search.trim().toLowerCase();
-      const res = await zerodb.tables.query("contacts", {
-        filter,
-        // search_blob is the denormalized lowercase concat replacement for
-        // Supabase FTS — see scripts/zerodb/bootstrap.ts and audit.ts.
-        search: s ? { field: "search_blob", value: s } : undefined,
-        sort: [{ field: sort, direction: ascending ? "asc" : "desc" }],
-        limit: pageSize,
-        offset: page * pageSize,
+      const filtered = all.filter((c) => {
+        if (stage !== "all" && c.pipeline_stage !== stage) return false;
+        if (industry !== "all" && c.industry !== industry) return false;
+        if (needle && !contactMatchesSearch(c, needle)) return false;
+        return true;
       });
-      return { rows: res.records, total: res.total };
+      filtered.sort((a, b) => compareContacts(a, b, sort, ascending));
+
+      const start = page * pageSize;
+      return { rows: filtered.slice(start, start + pageSize), total: filtered.length };
     },
     staleTime: 15_000,
   });

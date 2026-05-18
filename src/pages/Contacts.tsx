@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useBulkAddTag, useBulkDeleteContacts, useBulkUpdateContacts } from "@/lib/mutations";
 import { contactsToCsv, downloadCsv } from "@/lib/csv";
 import { zerodb } from "@/integrations/zerodb/client";
+import { buildSearchBlob } from "@/lib/audit";
 import type { Contact } from "@/lib/types";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -162,36 +163,47 @@ export default function Contacts() {
           );
         }
       } else {
-        const filter: Record<string, unknown> = {};
-        if (stageFilter !== "all") filter.pipeline_stage = stageFilter as PipelineStage;
-        if (industryFilter !== "all") filter.industry = industryFilter;
+        // Same proxy workaround as useContacts (#23 / #32): the ZeroDB
+        // proxy ignores `filter` and only prefix-matches `search`, so we
+        // paginate unfiltered and apply stage/industry/search client-side.
         const s = debouncedSearch.trim().toLowerCase();
-
-        // Page through results instead of a fixed 10k cap so large bases
-        // export in full (or surface a truncation warning if we hit the
-        // safety ceiling). PAGE_LIMIT is per request; HARD_MAX bounds the
-        // total to keep memory and download size predictable.
         const PAGE_LIMIT = 500;
         const HARD_MAX = 50_000;
-        let offset = 0;
+        let scanned = 0;
         let total = Infinity;
-        while (rows.length < total && rows.length < HARD_MAX) {
+        for (let p = 0; scanned < HARD_MAX; p++) {
           const res = await zerodb.tables.query("contacts", {
-            filter,
-            search: s ? { field: "search_blob", value: s } : undefined,
             sort: [{ field: "created_at", direction: "desc" }],
             limit: PAGE_LIMIT,
-            offset,
+            offset: p * PAGE_LIMIT,
           });
-          total = res.total ?? rows.length + res.records.length;
-          rows = rows.concat(res.records);
+          total = res.total ?? scanned + res.records.length;
+          for (const c of res.records) {
+            if (stageFilter !== "all" && c.pipeline_stage !== (stageFilter as PipelineStage)) continue;
+            if (industryFilter !== "all" && c.industry !== industryFilter) continue;
+            if (s) {
+              const blob = (c.search_blob && c.search_blob.length > 0)
+                ? c.search_blob.toLowerCase()
+                : buildSearchBlob({
+                    first_name: c.first_name,
+                    last_name: c.last_name,
+                    email: c.email,
+                    company: c.company,
+                    title: c.title,
+                    city: c.city,
+                    tags: c.tags ?? [],
+                  });
+              if (!blob.includes(s)) continue;
+            }
+            rows.push(c);
+          }
+          scanned += res.records.length;
           if (res.records.length < PAGE_LIMIT) break;
-          offset += PAGE_LIMIT;
         }
-        if (total > rows.length) {
+        if (total > scanned) {
           truncated = true;
           toast.warning(
-            `Export truncated to ${rows.length.toLocaleString()} rows (matching ${total.toLocaleString()}). Narrow your filters to export the rest.`,
+            `Export scanned the first ${scanned.toLocaleString()} of ${total.toLocaleString()} rows. Narrow your filters to capture the rest.`,
           );
         }
       }
