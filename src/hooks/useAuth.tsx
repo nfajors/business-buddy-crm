@@ -26,19 +26,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const SIGN_IN_KEY = "zerodb.last_sign_in_at";
 const SESSION_KEY = "zerodb.session";
 
-// Internal CRM uses shared API key auth — no ZeroDB user accounts needed.
-// The allowlist is the gate; password is a shared secret set via env var.
-const API_KEY = import.meta.env.VITE_ZERODB_API_KEY ?? "";
-const CRM_PASSWORD = import.meta.env.VITE_CRM_PASSWORD ?? "";
-
-function mintSession(email: string): AuthSession {
-  return {
-    token: API_KEY,
-    user: { id: email, email },
-    expiresAt: Date.now() + 8 * 60 * 60 * 1000, // 8h
-  };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(zerodb.getSession());
   const [loading, setLoading] = useState(true);
@@ -57,16 +44,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const normalized = email.trim().toLowerCase();
+    // Email allowlist is defense-in-depth — only provisioned staff may log in.
     if (!isEmailAllowed(normalized)) {
       return { error: "Access restricted to authorized Winning.Careers staff." };
     }
-    if (!CRM_PASSWORD || password !== CRM_PASSWORD) {
-      return { error: "Invalid email or password." };
+    try {
+      const session = await zerodb.auth.login(normalized, password);
+      // Keep session.user.id as the email so existing created_by/owner_id rows
+      // continue to resolve correctly (see issue #16).
+      session.user.id = normalized;
+      zerodb.setSession(session);
+      localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
+      return { error: null };
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Invalid email or password.";
+      // Surface ZeroDB 401/403 as a friendly auth error; don't leak internals.
+      if (message.includes("401") || message.includes("403") || message.includes("400")) {
+        return { error: "Invalid email or password." };
+      }
+      return { error: message };
     }
-    const session = mintSession(normalized);
-    zerodb.setSession(session);
-    localStorage.setItem(SIGN_IN_KEY, new Date().toISOString());
-    return { error: null };
   };
 
   // Sign-up is intentionally disabled — accounts are admin-provisioned.
