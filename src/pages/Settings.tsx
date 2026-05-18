@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Loader2, LogOut, Save, ShieldCheck, Upload, Trash2 } from "lucide-react";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -192,6 +192,16 @@ export default function Settings() {
                 Contact an admin if you need either.
               </p>
             </section>
+
+            {isAdmin && (
+              <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
+                <h3 className="font-bold mb-1">Admin tools</h3>
+                <p className="text-sm text-muted-foreground mb-3">Diagnostics and data inspection for admins.</p>
+                <Button asChild variant="outline">
+                  <Link to="/admin/diagnostics">Contact diagnostics</Link>
+                </Button>
+              </section>
+            )}
 
             <section className="bg-card border border-border rounded-xl p-6 shadow-elegant">
               <h3 className="font-bold mb-1">Account</h3>
