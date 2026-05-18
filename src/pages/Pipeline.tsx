@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 import {
   DndContext,
   DragEndEvent,
@@ -16,6 +16,8 @@ import {
 import { useDraggable } from "@dnd-kit/core";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { PIPELINE_STAGES, PipelineStage } from "@/lib/types";
 import { PIPELINE_COLUMN_CAP, PipelineCard, usePipeline } from "@/lib/queries";
 import { useUpdateStage } from "@/lib/mutations";
@@ -28,8 +30,32 @@ export default function Pipeline() {
     useSensor(KeyboardSensor),
   );
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const columns = data ?? ({} as Record<PipelineStage, PipelineCard[]>);
+  const rawColumns = data ?? ({} as Record<PipelineStage, PipelineCard[]>);
+
+  const { columns, filterActive } = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    if (!q) return { columns: rawColumns, filterActive: false };
+    const filtered = {} as Record<PipelineStage, PipelineCard[]>;
+    for (const stage of PIPELINE_STAGES) {
+      const items = rawColumns[stage.value] ?? [];
+      filtered[stage.value] = items.filter((c) => {
+        const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
+        return (
+          name.includes(q) ||
+          (c.title ?? "").toLowerCase().includes(q) ||
+          (c.company ?? "").toLowerCase().includes(q)
+        );
+      });
+    }
+    return { columns: filtered, filterActive: true };
+  }, [rawColumns, debouncedSearch]);
 
   const activeCard = useMemo(() => {
     if (!activeId) return null;
@@ -63,6 +89,27 @@ export default function Pipeline() {
     <AppLayout>
       <div className="px-6 lg:px-10 py-8 max-w-[100rem] mx-auto">
         <PageHeader title="Pipeline" description="Drag contacts between stages to update outreach status." />
+        <div className="relative max-w-md mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search name, title, company…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
         ) : (
@@ -70,14 +117,26 @@ export default function Pipeline() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {PIPELINE_STAGES.map((stage) => {
                 const items = columns[stage.value] ?? [];
+                const total = (rawColumns[stage.value] ?? []).length;
                 return (
-                  <Column key={stage.value} stage={stage.value} label={stage.label} color={stage.color} count={items.length}>
+                  <Column
+                    key={stage.value}
+                    stage={stage.value}
+                    label={stage.label}
+                    color={stage.color}
+                    count={items.length}
+                    total={filterActive ? total : undefined}
+                  >
                     <div className="space-y-2">
                       {items.map((c) => (
                         <Card key={c.id} card={c} pending={pendingId === c.id} />
                       ))}
-                      {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No contacts in this stage.</p>}
-                      {items.length >= PIPELINE_COLUMN_CAP && (
+                      {items.length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-6">
+                          {filterActive ? "No matches." : "No contacts in this stage."}
+                        </p>
+                      )}
+                      {!filterActive && total >= PIPELINE_COLUMN_CAP && (
                         <Link to={`/contacts?stage=${stage.value}`} className="block text-xs text-center text-gold-dark hover:underline py-1">
                           View all →
                         </Link>
@@ -97,7 +156,7 @@ export default function Pipeline() {
   );
 }
 
-function Column({ stage, label, color, count, children }: { stage: PipelineStage; label: string; color: string; count: number; children: React.ReactNode }) {
+function Column({ stage, label, color, count, total, children }: { stage: PipelineStage; label: string; color: string; count: number; total?: number; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   return (
     <div
@@ -109,7 +168,9 @@ function Column({ stage, label, color, count, children }: { stage: PipelineStage
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(var(--${color}))` }} />
           <h3 className="font-bold text-sm">{label}</h3>
         </div>
-        <span className="text-xs text-muted-foreground">{count}</span>
+        <span className="text-xs text-muted-foreground">
+          {total !== undefined ? `${count} / ${total}` : count}
+        </span>
       </div>
       {children}
     </div>
