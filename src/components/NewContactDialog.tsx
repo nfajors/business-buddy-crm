@@ -9,12 +9,16 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useCreateContact } from "@/lib/mutations";
 
+const phoneSchema = z.string().trim().max(50).default("");
+
 const schema = z.object({
   first_name: z.string().trim().min(1).max(100),
   last_name: z.string().trim().max(100).default(""),
   title: z.string().trim().max(200).default(""),
   company: z.string().trim().max(200).default(""),
   email: z.string().trim().email().max(255).or(z.literal("")),
+  work_phone: phoneSchema,
+  mobile_phone: phoneSchema,
   city: z.string().trim().max(100).default(""),
   state: z.string().trim().max(100).default(""),
   country: z.string().trim().max(100).default(""),
@@ -23,13 +27,14 @@ const schema = z.object({
 export function NewContactDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: () => void; }) {
   const { user } = useAuth();
   const create = useCreateContact();
-  const [form, setForm] = useState({ first_name: "", last_name: "", title: "", company: "", email: "", city: "", state: "", country: "" });
+  const emptyForm = { first_name: "", last_name: "", title: "", company: "", email: "", work_phone: "", mobile_phone: "", city: "", state: "", country: "" };
+  const [form, setForm] = useState(emptyForm);
   const submit = async () => {
     const parsed = schema.safeParse(form);
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     try {
       await create.mutateAsync({ ...parsed.data, created_by: user?.id ?? null, owner_id: user?.id ?? null });
-      setForm({ first_name: "", last_name: "", title: "", company: "", email: "", city: "", state: "", country: "" });
+      setForm(emptyForm);
       onOpenChange(false); onCreated();
     } catch {
       // toast handled in mutation onError
@@ -45,6 +50,8 @@ export function NewContactDialog({ open, onOpenChange, onCreated }: { open: bool
           <div className="space-y-1.5 col-span-2"><Label>Title</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div className="space-y-1.5 col-span-2"><Label>Company</Label><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></div>
           <div className="space-y-1.5 col-span-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>Work phone</Label><Input type="tel" value={form.work_phone} onChange={(e) => setForm({ ...form, work_phone: e.target.value })} placeholder="+1 555-123-4567" autoComplete="tel" /></div>
+          <div className="space-y-1.5"><Label>Mobile phone</Label><Input type="tel" value={form.mobile_phone} onChange={(e) => setForm({ ...form, mobile_phone: e.target.value })} placeholder="+1 555-987-6543" autoComplete="tel" /></div>
           <div className="space-y-1.5"><Label>City</Label><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>State / Region</Label><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} /></div>
           <div className="space-y-1.5 col-span-2"><Label>Country</Label><Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
