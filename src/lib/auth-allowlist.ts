@@ -8,9 +8,10 @@ const ALLOWED_EMAILS = new Set<string>([
   "mf@winning.careers",
   "caleb@winning.careers",
   "scott@inspiration-labs.com",
+  "admin@winning.careers",
 ]);
 
-const ADMIN_EMAILS = new Set<string>(["nf@winning.careers"]);
+const ADMIN_EMAILS = new Set<string>(["nf@winning.careers", "admin@winning.careers"]);
 
 export function isEmailAllowed(email: string): boolean {
   return ALLOWED_EMAILS.has(email.trim().toLowerCase());
