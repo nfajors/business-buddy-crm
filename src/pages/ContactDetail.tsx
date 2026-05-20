@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil, Plus, Copy, Check, X, Tag } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Globe, MapPin, Linkedin, Loader2, Trash2, Send, Pencil, Plus, Copy, Check, X, Tag, Facebook, Twitter, Hash } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,13 +107,24 @@ export default function ContactDetail() {
           </div>
           <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3 mt-8 text-sm">
             {contact.email && <Field icon={Mail} label="Email" value={contact.email} href={`mailto:${contact.email}`} />}
+            {contact.secondary_email && <Field icon={Mail} label="Secondary Email" value={contact.secondary_email} href={`mailto:${contact.secondary_email}`} />}
             {contact.work_phone && <Field icon={Phone} label="Work" value={contact.work_phone} href={`tel:${contact.work_phone}`} />}
             {contact.mobile_phone && <Field icon={Phone} label="Mobile" value={contact.mobile_phone} href={`tel:${contact.mobile_phone}`} />}
+            {contact.corporate_phone && <Field icon={Phone} label="Corporate" value={contact.corporate_phone} href={`tel:${contact.corporate_phone}`} />}
+            {contact.other_phone && <Field icon={Phone} label="Other Phone" value={contact.other_phone} href={`tel:${contact.other_phone}`} />}
+            {contact.company_phone && <Field icon={Phone} label="Company Phone" value={contact.company_phone} href={`tel:${contact.company_phone}`} />}
             {contact.website && <Field icon={Globe} label="Website" value={contact.website} href={contact.website} external />}
             {contact.linkedin && <Field icon={Linkedin} label="LinkedIn" value="View profile" href={contact.linkedin} external />}
+            {contact.company_linkedin && <Field icon={Linkedin} label="Company LinkedIn" value="View company" href={contact.company_linkedin} external />}
+            {contact.facebook_url && <Field icon={Facebook} label="Facebook" value="View profile" href={contact.facebook_url} external />}
+            {contact.twitter_url && <Field icon={Twitter} label="Twitter" value="View profile" href={contact.twitter_url} external />}
             {(contact.city || contact.state) && (
               <Field icon={MapPin} label="Location" value={[contact.city, contact.state, contact.country].filter(Boolean).join(", ")} />
             )}
+            {(contact.company_address || contact.company_city || contact.company_state || contact.company_country) && (
+              <Field icon={Building2} label="Company Address" value={[contact.company_address, contact.company_city, contact.company_state, contact.company_country].filter(Boolean).join(", ")} />
+            )}
+            {contact.keywords && <Field icon={Hash} label="Keywords" value={contact.keywords} />}
           </div>
           {canEdit && (
             <div className="mt-6 pt-6 border-t border-border">
