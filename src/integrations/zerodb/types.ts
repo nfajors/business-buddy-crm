@@ -45,6 +45,11 @@ export interface Contact {
   email_status: EmailStatus | null;
   work_phone: string | null;
   mobile_phone: string | null;
+  corporate_phone: string | null;
+  other_phone: string | null;
+  company_phone: string | null;
+  secondary_email: string | null;
+  keywords: string | null;
   title: string | null;
   company: string;
   industry: string | null;
@@ -52,10 +57,16 @@ export interface Contact {
   annual_revenue: number | null;
   website: string | null;
   linkedin: string | null;
+  company_linkedin: string | null;
+  facebook_url: string | null;
+  twitter_url: string | null;
   city: string | null;
   state: string | null;
   country: string | null;
+  company_address: string | null;
   company_city: string | null;
+  company_state: string | null;
+  company_country: string | null;
   tags: string[];
   pipeline_stage: PipelineStage;
   owner_id: string | null;
