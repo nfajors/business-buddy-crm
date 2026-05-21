@@ -332,17 +332,50 @@ export function useTasks(args: TasksQueryArgs = {}) {
 
 // ZeroDB assigns each row its own UUID row_id; we can't use the user's
 // email as a primary key. Instead, profiles carry a `user_id` field and
+// Profile lookup. Profile rows are keyed by ZeroDB's auto row_id, so
 // we look the row up by scanning. The proxy still ignores the `filter`
-// param (#23), so we paginate a small page and match client-side.
-// The profiles table only ever has one row per allowlisted user, so a
-// single 200-row page is plenty.
+// param (#23), so we paginate and match client-side.
+//
+// We match on BOTH `r.id` and `r.user_id`. The `user_id` field isn't
+// declared in the profiles bootstrap schema, so the proxy may drop it
+// (#34); the save path mirrors the email into `id` inside `row_data` as
+// a belt-and-suspenders, so a row written with `{ id: email, user_id: email }`
+// stays findable even if `user_id` is silently stripped.
+//
+// We page through up to 1,000 rows so accumulated duplicates from earlier
+// orphan-saves can't hide the real one.
+const PROFILE_SCAN_PAGE_SIZE = 200;
+const PROFILE_SCAN_MAX_PAGES = 5;
+
 export async function findProfileByUserId(userId: string): Promise<Profile | null> {
-  const res = await zerodb.tables.query("profiles", {
-    limit: 200,
-    sort: [{ field: "updated_at", direction: "desc" }],
-  });
-  const match = res.records.find((r) => r.user_id === userId);
-  return (match as Profile | undefined) ?? null;
+  let mostRecent: Profile | null = null;
+  for (let p = 0; p < PROFILE_SCAN_MAX_PAGES; p++) {
+    const res = await zerodb.tables.query("profiles", {
+      limit: PROFILE_SCAN_PAGE_SIZE,
+      offset: p * PROFILE_SCAN_PAGE_SIZE,
+      sort: [{ field: "updated_at", direction: "desc" }],
+    });
+    for (const r of res.records) {
+      // Match either key. `user_id` is preferred but may be absent for
+      // rows written before the schema fix; `id`-in-row_data is the
+      // belt-and-suspenders fallback.
+      const matches = r.user_id === userId || (r as { id?: string }).id === userId;
+      if (matches) {
+        // Keep the most recently-updated match. Since results are sorted
+        // updated_at DESC server-side (when the proxy honours it) the
+        // first hit is usually right, but we still compare timestamps
+        // client-side in case sort was ignored.
+        if (
+          !mostRecent ||
+          (r.updated_at ?? "") > (mostRecent.updated_at ?? "")
+        ) {
+          mostRecent = r as Profile;
+        }
+      }
+    }
+    if (res.records.length < PROFILE_SCAN_PAGE_SIZE) break;
+  }
+  return mostRecent;
 }
 
 export function useProfile(userId: string | undefined) {
